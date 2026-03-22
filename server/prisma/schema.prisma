@@ -1,0 +1,139 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// inital user model for user creation
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  passwordHash  String   @map("password_hash")
+  firstName     String   @map("first_name")
+  lastName      String   @map("last_name")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // linking a fhir patient's record
+  fhirPatientId String?  @unique @map("fhir_patient_id")
+
+  mealLogs      MealLog[]
+  mealPlans     MealPlan[]
+  allergies     UserAllergy[]
+
+  @@map("users")
+}
+
+// model for the meal log, which will be a list of meals listed by what the user ate
+model MealLog {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  mealType  MealType @map("meal_type")
+  loggedAt  DateTime @default(now()) @map("logged_at")
+  notes     String?
+
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     MealLogItem[]
+
+  @@index([userId, loggedAt])
+  @@map("meal_logs")
+}
+
+// each individual meal 
+model MealLogItem {
+  id         String  @id @default(uuid())
+  mealLogId  String  @map("meal_log_id")
+  foodItemId String  @map("food_item_id")
+  servings   Float   @default(1.0)
+
+  mealLog    MealLog  @relation(fields: [mealLogId], references: [id], onDelete: Cascade)
+  foodItem   FoodItem @relation(fields: [foodItemId], references: [id])
+
+  @@map("meal_log_items")
+}
+
+// reference used for each meal item
+model FoodItem {
+  id             String  @id @default(uuid())
+  name           String
+  brand          String?
+  servingSize    Float   @map("serving_size")
+  servingUnit    String  @map("serving_unit")
+  calories       Float
+  protein        Float
+  carbs          Float
+  fat            Float
+  fiber          Float?
+  sodium         Float?
+  sugar          Float?
+
+  usdaFdcId      String? @unique @map("usda_fdc_id")
+  offBarcode     String? @map("off_barcode")
+  mealLogItems   MealLogItem[]
+  mealPlanItems  MealPlanItem[]
+
+  @@index([name])
+  @@map("food_items")
+}
+
+// weekly meal plan created for a specific user's diet
+model MealPlan {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  name      String
+  startDate DateTime @map("start_date") @db.Date
+  endDate   DateTime @map("end_date") @db.Date
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     MealPlanItem[]
+
+  @@index([userId])
+  @@map("meal_plans")
+}
+
+// each meal within the meal plan
+model MealPlanItem {
+  id         String   @id @default(uuid())
+  mealPlanId String   @map("meal_plan_id")
+  foodItemId String   @map("food_item_id")
+  mealType   MealType @map("meal_type")
+  dayOfWeek  Int      @map("day_of_week")
+  servings   Float    @default(1.0)
+
+  mealPlan   MealPlan @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)
+  foodItem   FoodItem @relation(fields: [foodItemId], references: [id])
+
+  @@map("meal_plan_items")
+}
+
+
+// using and structuring only 1 fhir resource for now
+
+model UserAllergy {
+  id          String @id @default(uuid())
+  userId      String @map("user_id")
+  substance   String
+  severity    String?
+  fhirId      String @map("fhir_id")
+
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, fhirId])
+  @@map("user_allergies")
+}
+
+// each MealLog or MealPlanItem will have an enum field which labels a meal into one of these 4 categories
+enum MealType {
+  BREAKFAST
+  LUNCH
+  DINNER
+  SNACK
+}
