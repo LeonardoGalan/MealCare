@@ -103,22 +103,36 @@ Upload the hospital/practitioner data first, then 3 patient bundles to the FHIR 
 ```bash
 cd ~/synthea/output/fhir
 
-# POST hospital and practitioner info before patient bundles
-curl -s -X POST http://localhost:8080/fhir -H "Content-Type: application/fhir+json" -d @hospitalInformation*.json > /dev/null
-curl -s -X POST http://localhost:8080/fhir -H "Content-Type: application/fhir+json" -d @practitionerInformation*.json > /dev/null
+for f in hospitalInformation*.json; do
+  curl -X POST http://localhost:8080/fhir \
+    -H "Content-Type: application/fhir+json" \
+    -d @"$f"
+done
 
-# POST 3 patient bundles
+for f in practitionerInformation*.json; do
+  curl -X POST http://localhost:8080/fhir \
+    -H "Content-Type: application/fhir+json" \
+    -d @"$f"
+done
+
 count=0
+
 for f in *.json; do
   if [[ "$f" == hospital* ]] || [[ "$f" == practitioner* ]]; then
     continue
   fi
-  curl -s -X POST http://localhost:8080/fhir -H "Content-Type: application/fhir+json" -d @"$f" > /dev/null
+
+  curl -X POST http://localhost:8080/fhir \
+    -H "Content-Type: application/fhir+json" \
+    -d @"$f"
+
   count=$((count + 1))
+
   if [ $count -eq 3 ]; then
     break
   fi
 done
+
 echo "Uploaded $count patients"
 ```
 
@@ -136,4 +150,49 @@ for entry in data.get('entry', []):
     last = name.get('family', '')
     print(f'  ID: {r[\"id\"]}  Name: {first} {last}')
 "
+```
 
+### Start the backend server
+```bash
+cd server
+npm run dev
+```
+The server will start at http://localhost:3000
+
+
+| Method | Endpoint             | Description                          | Authentication Required |
+|--------|----------------------|--------------------------------------|--------------------------|
+| POST   | `/auth/register`     | Register a new user                  | No                       |
+| POST   | `/auth/login`        | Login and receive JWT token          | No                       |
+| GET    | `/me`                | Get current logged-in user profile   | Yes (Bearer Token)       |
+
+
+### Example Requests
+
+**1. Register a user**
+```bash
+curl -X POST http://localhost:3000/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "test@example.com",
+    "password": "password123",
+    "firstName": "Jane",
+    "lastName": "Doe"
+  }'
+```
+
+**2. Login**
+```bash
+curl -X POST http://localhost:3000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "test@example.com",
+    "password": "password123"
+  }'
+```
+
+**3. Get current user (protected)**
+```bash
+curl -X GET http://localhost:3000/me \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE"
+```
