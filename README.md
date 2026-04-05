@@ -8,8 +8,8 @@ Integrating FHIR resources into a meal planning and diet tracking web applicatio
 
 ## Tech Stack
 
-- **Frontend:** TypeScript 
-- **Backend:** Node.js 
+- **Frontend:** React + TypeScript + Vite + Tailwind CSS
+- **Backend:** Node.js + Hono
 - **Database:** PostgreSQL/Prisma
 - **FHIR Server:** HAPI FHIR through Docker
 - **Synthetic FHIR Patient Data:** Synthea
@@ -159,6 +159,13 @@ npm run dev
 ```
 The server will start at http://localhost:3000
 
+### Start the frontend
+```bash
+cd client
+npm run dev
+```
+The frontend will start at http://localhost:5137
+
 
 | Method | Endpoint             | Description                          | Authentication Required |
 |--------|----------------------|--------------------------------------|--------------------------|
@@ -169,7 +176,7 @@ The server will start at http://localhost:3000
 
 ### Example Requests
 
-**1. Register a user**
+**Register a user**
 ```bash
 curl -X POST http://localhost:3000/auth/register \
   -H "Content-Type: application/json" \
@@ -181,7 +188,7 @@ curl -X POST http://localhost:3000/auth/register \
   }'
 ```
 
-**2. Login**
+**Login**
 ```bash
 curl -X POST http://localhost:3000/auth/login \
   -H "Content-Type: application/json" \
@@ -191,7 +198,7 @@ curl -X POST http://localhost:3000/auth/login \
   }'
 ```
 
-**3. Get current user (protected)**
+**Get current user (protected)**
 ```bash
 curl -X GET http://localhost:3000/me \
   -H "Authorization: Bearer YOUR_TOKEN_HERE"
