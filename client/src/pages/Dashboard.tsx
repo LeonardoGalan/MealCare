@@ -148,7 +148,6 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
             Logout
           </button>
         </div>
-      </nav>
 
       <div className="max-w-6xl mx-auto px-6 py-8 flex gap-8">
 
@@ -217,6 +216,7 @@ export default function Dashboard({ onLogout }: { onLogout: () => void }) {
               ))}
             </div>
           </div>
+        </div>
 
           {/* MEALS GROUPED BY DATE + TYPE */}
           <div className="space-y-6">
