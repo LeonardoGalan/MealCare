@@ -6,7 +6,11 @@ import { authMiddleware } from './middleware'
 import prisma from './lib/prisma'  
 import 'dotenv/config'
 
-const app = new Hono()
+const app = new Hono<{ Variables: Variables }>();
+
+type Variables = {
+  userId: string;
+};
 
 app.use('*', cors())
 
