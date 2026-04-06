@@ -54,12 +54,16 @@ createdb mealcare
 ```
 
 
-Add an .env file within the server folder and set your database URL.
+Add an .env file within the server folder and set your database URL + USDA key.
 
 ```
 DATABASE_URL="postgresql://YOUR_USERNAME@localhost:5432/mealcare"
+JWT_SECRET="your-key"
+USDA_API_KEY="your_usda_api_key_here"
 ```
+We decided to use USDA FoodData Central as our external API for food search options due to being a government-verified and extremely detailed source while having US-focused food information. 
 
+**NOTE** : To get USDA API Key, please go to https://fdc.nal.usda.gov/api-key-signup
 
 ###  Run Prisma Migration
 
@@ -166,12 +170,16 @@ npm run dev
 ```
 The frontend will start at http://localhost:5137
 
-
-| Method | Endpoint             | Description                          | Authentication Required |
-|--------|----------------------|--------------------------------------|--------------------------|
-| POST   | `/auth/register`     | Register a new user                  | No                       |
-| POST   | `/auth/login`        | Login and receive JWT token          | No                       |
-| GET    | `/me`                | Get current logged-in user profile   | Yes (Bearer Token)       |
+| Method | Endpoint            | Description                                      | Auth Required |
+|--------|---------------------|--------------------------------------------------|---------------|
+| POST   | /auth/register      | Register a new user                              | No            |
+| POST   | /auth/login         | Login and receive JWT token                      | No            |
+| GET    | /me                 | Get current logged-in user profile               | Yes           |
+| GET    | /meal-logs          | Retrieve all meal logs for the logged-in user    | Yes           |
+| POST   | /meal-logs          | Create a new meal log with food items            | Yes           |
+| GET    | /fhir/search        | Search FHIR patients by name query               | No            |
+| POST   | /fhir/link          | Link a FHIR patient ID to the logged-in user     | Yes           |
+| GET    | /fhir/patient/:id   | Retrieve full FHIR patient details by ID         | No            |
 
 
 ### Example Requests
@@ -203,3 +211,15 @@ curl -X POST http://localhost:3000/auth/login \
 curl -X GET http://localhost:3000/me \
   -H "Authorization: Bearer YOUR_TOKEN_HERE"
 ```
+
+## FHIR Integration
+
+Users can link a FHIR patient to their account. The patient ID is stored in the database and used to fetch patient details from the FHIR server.
+
+## Troubleshooting
+**NOTE: THIS IS UNTESTED**
+
+If FHIR patient shows "N/A":
+- Ensure a patient is linked via /fhir/link
+- Check database for fhirPatientId
+- Ensure HAPI FHIR server is running at http://localhost:8080

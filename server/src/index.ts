@@ -2,6 +2,8 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { serve } from '@hono/node-server'
 import authRouter from './auth'
+import fhirRouter from './fhir'
+import mealRouter from './meal'
 import { authMiddleware } from './middleware'
 import prisma from './lib/prisma'  
 import 'dotenv/config'
@@ -16,6 +18,8 @@ app.use('*', cors())
 
 // Public routes
 app.route('/auth', authRouter)
+app.route('/fhir', fhirRouter)
+app.route('/meal-logs', mealRouter)
 
 // Protected route
 app.get('/me', authMiddleware, async (c) => {
