@@ -150,3 +150,49 @@ test("DELETE /meal-logs/:id deletes a meal log for the current user", async () =
 
   deleteMock.mock.restore();
 });
+
+test("GET /meal-logs/progress returns zero-filled buckets for the requested range", async () => {
+  const findManyMock = mock.method(prisma.mealLog, "findMany", async () => [
+    {
+      mealType: "BREAKFAST",
+      loggedAt: new Date("2026-04-12T12:00:00.000Z"),
+      items: [
+        {
+          servings: 1,
+          foodItem: {
+            calories: 350,
+            protein: 20,
+            carbs: 28,
+            fat: 12,
+          },
+        },
+      ],
+    },
+  ]);
+
+  const response = await createAuthenticatedRequest(
+    "/meal-logs/progress?date=2026-04-12&days=7",
+  );
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.days, 7);
+  assert.equal(body.startDate, "2026-04-06");
+  assert.equal(body.endDate, "2026-04-12");
+  assert.equal(body.buckets.length, 7);
+  assert.equal(body.buckets[6].totals.calories, 350);
+  assert.equal(body.buckets[0].totals.calories, 0);
+  assert.deepEqual(findManyMock.mock.calls[0]?.arguments[0], {
+    where: {
+      userId: "user-123",
+      loggedAt: {
+        gte: new Date(2026, 3, 6, 0, 0, 0, 0),
+        lt: new Date(2026, 3, 13, 0, 0, 0, 0),
+      },
+    },
+    include: { items: { include: { foodItem: true } } },
+    orderBy: { loggedAt: "asc" },
+  });
+
+  findManyMock.mock.restore();
+});

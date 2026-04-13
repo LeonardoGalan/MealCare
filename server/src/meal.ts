@@ -3,7 +3,10 @@ import prisma from "./lib/prisma";
 import { authMiddleware } from "./middleware";
 import {
   buildDailyNutritionSummary,
+  buildNutritionProgress,
+  getLocalDateRangeBounds,
   getLocalDayBounds,
+  resolveProgressDays,
   resolveLoggedAt,
   resolveRequestedDate,
 } from "./lib/nutrition";
@@ -175,6 +178,37 @@ router.get("/summary", authMiddleware, async (c) => {
   });
 
   return c.json(buildDailyNutritionSummary(date, logs));
+});
+
+router.get("/progress", authMiddleware, async (c) => {
+  const userId = c.get("userId");
+  const rawDate = c.req.query("date");
+  const rawDays = c.req.query("days");
+
+  let date: string;
+  let days: 7 | 30;
+
+  try {
+    date = resolveRequestedDate(rawDate);
+    days = resolveProgressDays(rawDays);
+  } catch (error) {
+    return c.json({ error: (error as Error).message }, 400);
+  }
+
+  const { start, end } = getLocalDateRangeBounds(date, days);
+  const logs = await prisma.mealLog.findMany({
+    where: {
+      userId,
+      loggedAt: {
+        gte: start,
+        lt: end,
+      },
+    },
+    include: { items: { include: { foodItem: true } } },
+    orderBy: { loggedAt: "asc" },
+  });
+
+  return c.json(buildNutritionProgress(date, days, logs));
 });
 
 router.get("/", authMiddleware, async (c) => {

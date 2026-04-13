@@ -2,6 +2,10 @@ import { useEffect, useState } from "react";
 import { ClipboardList, Link2, Plus, X } from "lucide-react";
 import MealHistoryList from "../components/MealHistoryList";
 import MealLogComposer from "../components/MealLogComposer";
+import {
+  CaloriesTrendPanel,
+  MacroTrendPanel,
+} from "../components/NutritionTrendPanels";
 import api from "../lib/api";
 import {
   buildMealDescription,
@@ -10,6 +14,7 @@ import {
   deleteMealLog,
   fetchDailySummary,
   fetchMealLogs,
+  fetchNutritionProgress,
   formatDateLabel,
   formatMealTypeLabel,
   groupByMealType,
@@ -18,9 +23,11 @@ import {
   toLocalDateKey,
   type DailyNutritionSummary,
   type MealLog,
+  type NutritionProgressSummary,
 } from "../lib/meal-log";
 
 type UtilityTab = "log" | "history";
+type SummaryView = "today" | "trends";
 
 type UserData = {
   id: string;
@@ -107,6 +114,11 @@ export default function Dashboard() {
   const [patientResults, setPatientResults] = useState<PatientSearchEntry[]>([]);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
+  const [summaryView, setSummaryView] = useState<SummaryView>("today");
+  const [trendDays, setTrendDays] = useState<7 | 30>(7);
+  const [progressSummary, setProgressSummary] = useState<NutritionProgressSummary | null>(null);
+  const [isLoadingProgress, setIsLoadingProgress] = useState(false);
+  const [progressError, setProgressError] = useState<string | null>(null);
   const [isUtilityPanelOpen, setIsUtilityPanelOpen] = useState(false);
   const [utilityTab, setUtilityTab] = useState<UtilityTab>("log");
 
@@ -175,6 +187,44 @@ export default function Dashboard() {
     };
   }, [selectedDate]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    if (summaryView !== "trends") {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const loadProgress = async () => {
+      setIsLoadingProgress(true);
+      setProgressError(null);
+
+      try {
+        const progress = await fetchNutritionProgress(selectedDate, trendDays);
+
+        if (!cancelled) {
+          setProgressSummary(progress);
+        }
+      } catch {
+        if (!cancelled) {
+          setProgressSummary(null);
+          setProgressError("Unable to load nutrition trends right now.");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingProgress(false);
+        }
+      }
+    };
+
+    void loadProgress();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDate, summaryView, trendDays]);
+
   const reloadSelectedDate = async () => {
     const [logs, summary] = await Promise.all([
       fetchMealLogs(selectedDate),
@@ -230,10 +280,11 @@ export default function Dashboard() {
     Math.round((dailySummary.totals.calories / CALORIE_GOAL) * 100),
   );
   const patientName = formatPatientName(fhirContext.patient, user);
+  const trendBuckets = progressSummary?.buckets ?? [];
 
   return (
     <div className="h-full bg-[radial-gradient(circle_at_top,#f9fcff_0%,#eef5fb_55%,#e7eff8_100%)]">
-      <div className="mx-auto max-w-[1500px] px-4 py-4 xl:px-5">
+      <div className="mx-auto max-w-[1500px] px-3 py-3 sm:px-4 sm:py-4 xl:px-5">
         {dashboardError && (
           <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
             {dashboardError}
@@ -242,7 +293,7 @@ export default function Dashboard() {
 
         <div className="grid gap-3 xl:grid-cols-[0.82fr,1.38fr]">
           <section className="rounded-xl border border-sky-100 bg-gradient-to-br from-white via-[#fbfdff] to-sky-50 p-4 shadow-sm shadow-sky-100/60">
-            <h2 className="text-[1.8rem] font-bold leading-tight text-slate-800">
+            <h2 className="text-[1.45rem] font-bold leading-tight text-slate-800 sm:text-[1.8rem]">
               Your Information
             </h2>
             <div className="mt-4 space-y-2.5 text-sm text-slate-700">
@@ -292,10 +343,51 @@ export default function Dashboard() {
           <section className="rounded-xl border border-cyan-100 bg-gradient-to-br from-white via-[#faffff] to-cyan-50 p-4 shadow-sm shadow-cyan-100/70">
             <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
               <div>
-                <h2 className="text-[1.8rem] font-bold leading-tight text-slate-800">
-                  Today&apos;s Summary
-                </h2>
-                <p className="mt-1.5 text-sm text-slate-500">{formatDateLabel(selectedDate)}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-[1.45rem] font-bold leading-tight text-slate-800 sm:text-[1.8rem]">
+                    Today&apos;s Summary
+                  </h2>
+                  <div className="inline-flex rounded-full bg-sky-100 p-1 text-xs font-medium text-slate-600">
+                    {[
+                      { id: "today", label: "Today" },
+                      { id: "trends", label: "Trends" },
+                    ].map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => setSummaryView(item.id as SummaryView)}
+                        className={`rounded-full px-3 py-1 transition ${
+                          summaryView === item.id
+                            ? "bg-white text-[#205278] shadow-sm"
+                            : "text-slate-500"
+                        }`}
+                        type="button"
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                  <p className="text-sm text-slate-500">{formatDateLabel(selectedDate)}</p>
+                  {summaryView === "trends" && (
+                    <div className="inline-flex rounded-full bg-white/80 p-1 text-[11px] font-medium text-slate-600 shadow-sm">
+                      {[7, 30].map((days) => (
+                        <button
+                          key={days}
+                          onClick={() => setTrendDays(days as 7 | 30)}
+                          className={`rounded-full px-2.5 py-1 transition ${
+                            trendDays === days
+                              ? "bg-[#1e86c8] text-white"
+                              : "text-slate-500"
+                          }`}
+                          type="button"
+                        >
+                          {days}D
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center xl:flex-nowrap">
@@ -324,63 +416,110 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="mt-4">
-              <div className="flex items-center justify-between text-sm font-semibold text-slate-800">
-                <span>Calories</span>
-                <span>
-                  {roundValue(dailySummary.totals.calories)} / {CALORIE_GOAL} kcal
-                </span>
-              </div>
-              <div className="mt-2.5 h-3 rounded-full bg-sky-100">
-                <div
-                  className="h-3 rounded-full bg-gradient-to-r from-emerald-400 to-[#1fba8c] transition-all"
-                  style={{ width: `${calorieProgress}%` }}
-                />
-              </div>
-            </div>
-
-            <div className="mt-4 grid gap-2.5 sm:grid-cols-3">
-              {[
-                {
-                  label: "Protein",
-                  value: `${roundValue(dailySummary.totals.protein)} g`,
-                  accent: "text-emerald-600",
-                },
-                {
-                  label: "Carbs",
-                  value: `${roundValue(dailySummary.totals.carbs)} g`,
-                  accent: "text-[#1e7cb6]",
-                },
-                {
-                  label: "Fat",
-                  value: `${roundValue(dailySummary.totals.fat)} g`,
-                  accent: "text-amber-500",
-                },
-              ].map((item) => (
-                <div
-                  key={item.label}
-                  className="rounded-lg border border-white/60 bg-white/80 px-3 py-2.5 shadow-sm"
-                >
-                  <p className="text-xs text-slate-500">{item.label}</p>
-                  <p className={`mt-1 text-lg font-semibold ${item.accent}`}>{item.value}</p>
+            {summaryView === "today" ? (
+              <>
+                <div className="mt-4">
+                  <div className="flex items-center justify-between text-sm font-semibold text-slate-800">
+                    <span>Calories</span>
+                    <span>
+                      {roundValue(dailySummary.totals.calories)} / {CALORIE_GOAL} kcal
+                    </span>
+                  </div>
+                  <div className="mt-2.5 h-3 rounded-full bg-sky-100">
+                    <div
+                      className="h-3 rounded-full bg-gradient-to-r from-emerald-400 to-[#1fba8c] transition-all"
+                      style={{ width: `${calorieProgress}%` }}
+                    />
+                  </div>
                 </div>
-              ))}
-            </div>
 
-            <div className="mt-3 text-xs text-slate-500">
-              {isLoadingDashboard
-                ? "Refreshing nutrition data..."
-                : `${dailySummary.mealCount} meals logged across ${dailySummary.itemCount} food items.`}
-            </div>
+                <div className="mt-4 grid gap-2.5 sm:grid-cols-3">
+                  {[
+                    {
+                      label: "Protein",
+                      value: `${roundValue(dailySummary.totals.protein)} g`,
+                      accent: "text-emerald-600",
+                    },
+                    {
+                      label: "Carbs",
+                      value: `${roundValue(dailySummary.totals.carbs)} g`,
+                      accent: "text-[#1e7cb6]",
+                    },
+                    {
+                      label: "Fat",
+                      value: `${roundValue(dailySummary.totals.fat)} g`,
+                      accent: "text-amber-500",
+                    },
+                  ].map((item) => (
+                    <div
+                      key={item.label}
+                      className="rounded-lg border border-white/60 bg-white/80 px-3 py-2.5 shadow-sm"
+                    >
+                      <p className="text-xs text-slate-500">{item.label}</p>
+                      <p className={`mt-1 text-lg font-semibold ${item.accent}`}>
+                        {item.value}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-3 text-xs text-slate-500">
+                  {isLoadingDashboard
+                    ? "Refreshing nutrition data..."
+                    : `${dailySummary.mealCount} meals logged across ${dailySummary.itemCount} food items.`}
+                </div>
+              </>
+            ) : (
+              <>
+                {progressError && (
+                  <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                    {progressError}
+                  </div>
+                )}
+                {isLoadingProgress ? (
+                  <div className="mt-4 rounded-xl border border-white/70 bg-white/80 px-4 py-8 text-sm text-slate-500 shadow-sm">
+                    Loading nutrition trends...
+                  </div>
+                ) : trendBuckets.length === 0 ? (
+                  <div className="mt-4 rounded-xl border border-white/70 bg-white/80 px-4 py-8 text-sm text-slate-500 shadow-sm">
+                    Trend data is unavailable for this view.
+                  </div>
+                ) : (
+                  <CaloriesTrendPanel buckets={trendBuckets} days={trendDays} />
+                )}
+              </>
+            )}
           </section>
         </div>
 
         <section className="mt-3 rounded-xl border border-sky-100 bg-white p-4 shadow-sm shadow-sky-100/60">
-          <h2 className="text-[1.8rem] font-bold leading-tight text-slate-800">
+          <h2 className="text-[1.45rem] font-bold leading-tight text-slate-800 sm:text-[1.8rem]">
             Today&apos;s Meal Plan
           </h2>
-          <div className="mt-4 overflow-hidden rounded-lg border border-sky-100">
-            <table className="min-w-full border-collapse text-left text-sm">
+          <div className="mt-4 space-y-2.5 md:hidden">
+            {MEAL_TYPES.map((currentMealType) => (
+              <div
+                key={currentMealType}
+                className="rounded-lg border border-sky-100 bg-gradient-to-r from-white to-sky-50/40 px-3.5 py-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-[#204f74]">
+                      {formatMealTypeLabel(currentMealType)}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-700">
+                      {buildMealDescription(groupedMeals[currentMealType])}
+                    </p>
+                  </div>
+                  <p className="whitespace-nowrap text-sm font-semibold text-emerald-500">
+                    {roundValue(dailySummary.byMealType[currentMealType].calories)} kcal
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 hidden overflow-x-auto rounded-lg border border-sky-100 md:block">
+            <table className="min-w-[38rem] border-collapse text-left text-sm">
               <thead className="bg-gradient-to-r from-sky-50 to-cyan-50 text-slate-700">
                 <tr>
                   <th className="px-4 py-2.5 font-semibold">Meals</th>
@@ -412,49 +551,63 @@ export default function Dashboard() {
 
         <div className="mt-3 grid gap-3 xl:grid-cols-[1fr,0.95fr]">
           <section className="rounded-xl border border-sky-100 bg-gradient-to-br from-white via-[#fafdff] to-sky-50 p-4 shadow-sm shadow-sky-100/60">
-            <h2 className="text-[1.8rem] font-bold leading-tight text-slate-800">
-              Macronutrient Breakdown of Today&apos;s Meal
+            <h2 className="text-[1.45rem] font-bold leading-tight text-slate-800 sm:text-[1.8rem]">
+              {summaryView === "today"
+                ? "Macronutrient Breakdown of Today's Meal"
+                : "Macronutrient Trends"}
             </h2>
 
-            <div className="mt-5 space-y-4">
-              {[
-                {
-                  label: "Protein",
-                  value: macroPercentages.protein,
-                  color: "bg-emerald-500",
-                },
-                {
-                  label: "Carbs",
-                  value: macroPercentages.carbs,
-                  color: "bg-[#1e7cb6]",
-                },
-                {
-                  label: "Fat",
-                  value: macroPercentages.fat,
-                  color: "bg-amber-400",
-                },
-              ].map((macro) => (
-                <div
-                  key={macro.label}
-                  className="grid items-center gap-3 sm:grid-cols-[78px,1fr,48px]"
-                >
-                  <p className="text-lg font-semibold text-slate-800">{macro.label}</p>
-                  <div className="h-4 rounded-md bg-sky-100">
-                    <div
-                      className={`h-4 rounded-md ${macro.color} transition-all`}
-                      style={{ width: `${macro.value}%` }}
-                    />
+            {summaryView === "today" ? (
+              <div className="mt-5 space-y-4">
+                {[
+                  {
+                    label: "Protein",
+                    value: macroPercentages.protein,
+                    color: "bg-emerald-500",
+                  },
+                  {
+                    label: "Carbs",
+                    value: macroPercentages.carbs,
+                    color: "bg-[#1e7cb6]",
+                  },
+                  {
+                    label: "Fat",
+                    value: macroPercentages.fat,
+                    color: "bg-amber-400",
+                  },
+                ].map((macro) => (
+                  <div
+                    key={macro.label}
+                    className="grid items-center gap-3 sm:grid-cols-[78px,1fr,48px]"
+                  >
+                    <p className="text-lg font-semibold text-slate-800">{macro.label}</p>
+                    <div className="h-4 rounded-md bg-sky-100">
+                      <div
+                        className={`h-4 rounded-md ${macro.color} transition-all`}
+                        style={{ width: `${macro.value}%` }}
+                      />
+                    </div>
+                    <p className="text-right text-lg font-semibold text-slate-800">
+                      {macro.value}%
+                    </p>
                   </div>
-                  <p className="text-right text-lg font-semibold text-slate-800">
-                    {macro.value}%
-                  </p>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : isLoadingProgress ? (
+              <div className="mt-4 rounded-xl border border-white/70 bg-white/80 px-4 py-8 text-sm text-slate-500 shadow-sm">
+                Loading macro trends...
+              </div>
+            ) : trendBuckets.length === 0 ? (
+              <div className="mt-4 rounded-xl border border-white/70 bg-white/80 px-4 py-8 text-sm text-slate-500 shadow-sm">
+                Trend data is unavailable for this view.
+              </div>
+            ) : (
+              <MacroTrendPanel buckets={trendBuckets} />
+            )}
           </section>
 
           <section className="rounded-xl border border-amber-200 bg-gradient-to-br from-[#fffdf8] to-[#fff4df] p-4 shadow-sm shadow-amber-100/70">
-            <h2 className="text-[1.8rem] font-bold leading-tight text-slate-800">
+            <h2 className="text-[1.45rem] font-bold leading-tight text-slate-800 sm:text-[1.8rem]">
               Suggestion From Your Provider
             </h2>
 

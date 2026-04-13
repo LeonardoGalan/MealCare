@@ -82,7 +82,7 @@ export default function LogMeal() {
 
   return (
     <div className="h-full bg-[radial-gradient(circle_at_top,#f9fcff_0%,#eef5fb_55%,#e7eff8_100%)]">
-      <div className="mx-auto max-w-[1480px] px-4 py-3 xl:px-5">
+      <div className="mx-auto max-w-[1480px] px-3 py-3 sm:px-4 xl:px-5">
         {pageError && (
           <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {pageError}
@@ -100,7 +100,7 @@ export default function LogMeal() {
                 Back to Dashboard
               </Link>
             </div>
-            <h1 className="mt-2.5 text-[1.8rem] font-bold leading-tight text-slate-900">
+            <h1 className="mt-2.5 text-[1.5rem] font-bold leading-tight text-slate-900 sm:text-[1.8rem]">
               Log Meal
             </h1>
             <p className="mt-0.5 text-sm text-slate-500">
@@ -126,7 +126,7 @@ export default function LogMeal() {
 
           <div className="space-y-2.5">
             <section className="rounded-2xl border border-cyan-100 bg-gradient-to-br from-white via-[#faffff] to-cyan-50 p-3.5 shadow-sm shadow-cyan-100/70">
-              <h2 className="text-[1.4rem] font-bold leading-tight text-slate-800">
+              <h2 className="text-[1.2rem] font-bold leading-tight text-slate-800 sm:text-[1.4rem]">
                 Selected Day Summary
               </h2>
               <p className="mt-1 text-sm text-slate-500">
@@ -182,7 +182,7 @@ export default function LogMeal() {
             </section>
 
             <section className="rounded-2xl border border-sky-100 bg-white p-3.5 shadow-sm shadow-sky-100/60">
-              <h2 className="text-[1.4rem] font-bold leading-tight text-slate-800">
+              <h2 className="text-[1.2rem] font-bold leading-tight text-slate-800 sm:text-[1.4rem]">
                 Macro Balance
               </h2>
 
@@ -228,7 +228,7 @@ export default function LogMeal() {
         <section className="mt-2.5 rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h2 className="text-[1.4rem] font-bold leading-tight text-slate-900">
+              <h2 className="text-[1.2rem] font-bold leading-tight text-slate-900 sm:text-[1.4rem]">
                 Logged Meals
               </h2>
               <p className="mt-0.5 text-sm text-slate-500">
@@ -237,7 +237,7 @@ export default function LogMeal() {
             </div>
           </div>
 
-          <div className="mt-3 max-h-[24rem] overflow-y-auto pr-1">
+          <div className="mt-3 max-h-[18rem] overflow-y-auto pr-1 sm:max-h-[24rem]">
             <MealHistoryList
               mealLogs={mealLogs}
               isLoading={isLoading}

@@ -22,6 +22,22 @@ export type DailyNutritionSummary = {
   byMealType: Record<MealType, MealTypeSummary>;
 };
 
+export type NutritionProgressBucket = {
+  date: string;
+  totals: NutritionTotals;
+  mealCount: number;
+  itemCount: number;
+};
+
+export type NutritionProgressSummary = {
+  date: string;
+  days: number;
+  startDate: string;
+  endDate: string;
+  averages: NutritionTotals;
+  buckets: NutritionProgressBucket[];
+};
+
 export type MealLogItemSummarySource = {
   servings: number;
   foodItem: {
@@ -37,7 +53,12 @@ export type MealLogSummarySource = {
   items: MealLogItemSummarySource[];
 };
 
+export type MealLogProgressSource = MealLogSummarySource & {
+  loggedAt: Date;
+};
+
 const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const SUPPORTED_PROGRESS_DAYS = [7, 30] as const;
 
 export function createEmptyNutritionTotals(): NutritionTotals {
   return {
@@ -129,6 +150,105 @@ export function buildDailyNutritionSummary(
   }
 
   return summary;
+}
+
+function createEmptyProgressBucket(date: string): NutritionProgressBucket {
+  return {
+    date,
+    totals: createEmptyNutritionTotals(),
+    mealCount: 0,
+    itemCount: 0,
+  };
+}
+
+export function getDateRangeKeys(endDate: string, days: number): string[] {
+  const [year, month, day] = endDate.split("-").map(Number);
+  const end = new Date(year, month - 1, day, 0, 0, 0, 0);
+  const keys: string[] = [];
+
+  for (let offset = days - 1; offset >= 0; offset -= 1) {
+    const current = new Date(end);
+    current.setDate(end.getDate() - offset);
+    keys.push(toLocalDateKey(current));
+  }
+
+  return keys;
+}
+
+export function getLocalDateRangeBounds(
+  endDate: string,
+  days: number,
+): { start: Date; end: Date; dates: string[] } {
+  const dates = getDateRangeKeys(endDate, days);
+  const [startYear, startMonth, startDay] = dates[0].split("-").map(Number);
+  const [endYear, endMonth, endDay] = endDate.split("-").map(Number);
+
+  return {
+    start: new Date(startYear, startMonth - 1, startDay, 0, 0, 0, 0),
+    end: new Date(endYear, endMonth - 1, endDay + 1, 0, 0, 0, 0),
+    dates,
+  };
+}
+
+export function resolveProgressDays(value: string | undefined): 7 | 30 {
+  if (!value) {
+    return 7;
+  }
+
+  const parsed = Number(value);
+  if (
+    !Number.isInteger(parsed) ||
+    !SUPPORTED_PROGRESS_DAYS.includes(parsed as 7 | 30)
+  ) {
+    throw new Error("days must be 7 or 30.");
+  }
+
+  return parsed as 7 | 30;
+}
+
+export function buildNutritionProgress(
+  endDate: string,
+  days: 7 | 30,
+  logs: MealLogProgressSource[],
+): NutritionProgressSummary {
+  const dates = getDateRangeKeys(endDate, days);
+  const bucketMap = new Map<string, NutritionProgressBucket>(
+    dates.map((date) => [date, createEmptyProgressBucket(date)]),
+  );
+
+  for (const log of logs) {
+    const date = toLocalDateKey(log.loggedAt);
+    const bucket = bucketMap.get(date);
+
+    if (!bucket) {
+      continue;
+    }
+
+    const mealSummary = summarizeMealLog(log);
+    bucket.totals = addNutritionTotals(bucket.totals, mealSummary);
+    bucket.mealCount += 1;
+    bucket.itemCount += log.items.length;
+  }
+
+  const buckets = dates.map((date) => bucketMap.get(date) ?? createEmptyProgressBucket(date));
+  const total = buckets.reduce(
+    (acc, bucket) => addNutritionTotals(acc, bucket.totals),
+    createEmptyNutritionTotals(),
+  );
+
+  return {
+    date: endDate,
+    days,
+    startDate: dates[0],
+    endDate,
+    averages: {
+      calories: total.calories / days,
+      protein: total.protein / days,
+      carbs: total.carbs / days,
+      fat: total.fat / days,
+    },
+    buckets,
+  };
 }
 
 export function toLocalDateKey(value: Date): string {

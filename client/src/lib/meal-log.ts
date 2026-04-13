@@ -24,6 +24,22 @@ export type DailyNutritionSummary = {
   byMealType: Record<MealType, MealTypeSummary>;
 };
 
+export type NutritionProgressBucket = {
+  date: string;
+  totals: NutritionTotals;
+  mealCount: number;
+  itemCount: number;
+};
+
+export type NutritionProgressSummary = {
+  date: string;
+  days: 7 | 30;
+  startDate: string;
+  endDate: string;
+  averages: NutritionTotals;
+  buckets: NutritionProgressBucket[];
+};
+
 export type FoodSearchResult = {
   fdcId: number;
   name: string;
@@ -198,6 +214,17 @@ export async function fetchDailySummary(
 ): Promise<DailyNutritionSummary> {
   const response = await api.get<DailyNutritionSummary>("/meal-logs/summary", {
     params: { date },
+  });
+
+  return response.data;
+}
+
+export async function fetchNutritionProgress(
+  date: string,
+  days: 7 | 30,
+): Promise<NutritionProgressSummary> {
+  const response = await api.get<NutritionProgressSummary>("/meal-logs/progress", {
+    params: { date, days },
   });
 
   return response.data;
