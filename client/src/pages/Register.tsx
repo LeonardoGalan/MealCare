@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { AxiosError } from 'axios';
 import api from '../lib/api';
 import { UserPlus, Mail, Lock } from "lucide-react";
 
@@ -31,8 +32,9 @@ export default function Register({ onRegister }: RegisterProps) {
       const response = await api.post('/auth/register', formData);
       onRegister(response.data.token);
       navigate('/dashboard');
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Registration failed');
+    } catch (error) {
+      const responseError = error as AxiosError<{ error?: string }>;
+      setError(responseError.response?.data?.error || 'Registration failed');
     } finally {
       setLoading(false);
     }
