@@ -1,36 +1,26 @@
 import { useEffect, useState } from "react";
-import {
-  ClipboardList,
-  Link2,
-  Plus,
-  Search,
-  Trash2,
-  X,
-} from "lucide-react";
+import { ClipboardList, Link2, Plus, X } from "lucide-react";
+import MealHistoryList from "../components/MealHistoryList";
+import MealLogComposer from "../components/MealLogComposer";
 import api from "../lib/api";
+import {
+  buildMealDescription,
+  calculateMacroPercentages,
+  createEmptySummary,
+  deleteMealLog,
+  fetchDailySummary,
+  fetchMealLogs,
+  formatDateLabel,
+  formatMealTypeLabel,
+  groupByMealType,
+  MEAL_TYPES,
+  roundValue,
+  toLocalDateKey,
+  type DailyNutritionSummary,
+  type MealLog,
+} from "../lib/meal-log";
 
-type MealType = "BREAKFAST" | "LUNCH" | "DINNER" | "SNACK";
 type UtilityTab = "log" | "history";
-
-type NutritionTotals = {
-  calories: number;
-  protein: number;
-  carbs: number;
-  fat: number;
-};
-
-type MealTypeSummary = NutritionTotals & {
-  mealCount: number;
-  itemCount: number;
-};
-
-type DailyNutritionSummary = {
-  date: string;
-  totals: NutritionTotals;
-  mealCount: number;
-  itemCount: number;
-  byMealType: Record<MealType, MealTypeSummary>;
-};
 
 type UserData = {
   id: string;
@@ -65,77 +55,7 @@ type PatientSearchEntry = {
     name?: HumanName[];
   };
 };
-
-type FoodSearchResult = {
-  fdcId: number;
-  name: string;
-  brand: string;
-  calories: number;
-  protein: number;
-  carbs: number;
-  fat: number;
-  servingSize: number;
-  servingUnit: string;
-};
-
-type MealLogFoodItem = {
-  id: string;
-  name: string;
-  brand: string | null;
-  calories: number;
-  protein: number;
-  carbs: number;
-  fat: number;
-};
-
-type MealLogItem = {
-  id: string;
-  servings: number;
-  foodItem: MealLogFoodItem | null;
-};
-
-type MealLog = {
-  id: string;
-  mealType: MealType;
-  loggedAt: string;
-  notes: string | null;
-  items: MealLogItem[];
-};
-
-const MEAL_TYPES: MealType[] = ["BREAKFAST", "LUNCH", "DINNER", "SNACK"];
 const CALORIE_GOAL = 2000;
-
-function createEmptyNutritionTotals(): NutritionTotals {
-  return {
-    calories: 0,
-    protein: 0,
-    carbs: 0,
-    fat: 0,
-  };
-}
-
-function createEmptyMealTypeSummary(): MealTypeSummary {
-  return {
-    ...createEmptyNutritionTotals(),
-    mealCount: 0,
-    itemCount: 0,
-  };
-}
-
-function createEmptySummary(date: string): DailyNutritionSummary {
-  return {
-    date,
-    totals: createEmptyNutritionTotals(),
-    mealCount: 0,
-    itemCount: 0,
-    byMealType: {
-      BREAKFAST: createEmptyMealTypeSummary(),
-      LUNCH: createEmptyMealTypeSummary(),
-      DINNER: createEmptyMealTypeSummary(),
-      SNACK: createEmptyMealTypeSummary(),
-    },
-  };
-}
 
 function createEmptyFhirContext(): FhirContext {
   return {
@@ -146,32 +66,6 @@ function createEmptyFhirContext(): FhirContext {
       "Link a FHIR patient to unlock condition-aware meal guidance and allergy reminders.",
     ],
   };
-}
-
-function toLocalDateKey(value: Date | string): string {
-  const date = value instanceof Date ? value : new Date(value);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function formatDateLabel(date: string): string {
-  const [year, month, day] = date.split("-").map(Number);
-  return new Date(year, month - 1, day).toLocaleDateString(undefined, {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function formatMealTypeLabel(mealType: MealType): string {
-  return mealType.charAt(0) + mealType.slice(1).toLowerCase();
-}
-
-function roundValue(value: number): string {
-  return Math.round(value).toString();
 }
 
 function formatPatientName(
@@ -198,64 +92,6 @@ function formatValueList(values: string[], emptyValue: string): string {
   return values.length > 0 ? values.join(", ") : emptyValue;
 }
 
-function buildMealDescription(logs: MealLog[]): string {
-  const names = [
-    ...new Set(
-      logs.flatMap((log) =>
-        log.items
-          .map((item) => item.foodItem?.name)
-          .filter((value): value is string => Boolean(value)),
-      ),
-    ),
-  ];
-
-  if (names.length === 0) {
-    return "No meal logged yet";
-  }
-
-  if (names.length <= 3) {
-    return names.join(", ");
-  }
-
-  return `${names.slice(0, 3).join(", ")} +${names.length - 3} more`;
-}
-
-function calculateMacroPercentages(totals: NutritionTotals): Record<"protein" | "carbs" | "fat", number> {
-  const proteinCalories = totals.protein * 4;
-  const carbCalories = totals.carbs * 4;
-  const fatCalories = totals.fat * 9;
-  const totalMacroCalories = proteinCalories + carbCalories + fatCalories;
-
-  if (totalMacroCalories === 0) {
-    return {
-      protein: 0,
-      carbs: 0,
-      fat: 0,
-    };
-  }
-
-  return {
-    protein: Math.round((proteinCalories / totalMacroCalories) * 100),
-    carbs: Math.round((carbCalories / totalMacroCalories) * 100),
-    fat: Math.round((fatCalories / totalMacroCalories) * 100),
-  };
-}
-
-function groupByMealType(logs: MealLog[]): Record<MealType, MealLog[]> {
-  return logs.reduce<Record<MealType, MealLog[]>>(
-    (acc, log) => {
-      acc[log.mealType].push(log);
-      return acc;
-    },
-    {
-      BREAKFAST: [],
-      LUNCH: [],
-      DINNER: [],
-      SNACK: [],
-    },
-  );
-}
-
 export default function Dashboard() {
   const [user, setUser] = useState<UserData | null>(null);
   const [mealLogs, setMealLogs] = useState<MealLog[]>([]);
@@ -265,12 +101,6 @@ export default function Dashboard() {
   const [fhirContext, setFhirContext] = useState<FhirContext>(() =>
     createEmptyFhirContext(),
   );
-
-  const [searchTerm, setSearchTerm] = useState("");
-  const [searchResults, setSearchResults] = useState<FoodSearchResult[]>([]);
-  const [selectedFood, setSelectedFood] = useState<FoodSearchResult | null>(null);
-  const [mealType, setMealType] = useState<MealType>("BREAKFAST");
-  const [servings, setServings] = useState(1);
 
   const [selectedDate, setSelectedDate] = useState(() => toLocalDateKey(new Date()));
   const [showLinkModal, setShowLinkModal] = useState(false);
@@ -316,18 +146,14 @@ export default function Dashboard() {
       setDashboardError(null);
 
       try {
-        const [mealResponse, summaryResponse] = await Promise.all([
-          api.get<MealLog[]>("/meal-logs", {
-            params: { date: selectedDate },
-          }),
-          api.get<DailyNutritionSummary>("/meal-logs/summary", {
-            params: { date: selectedDate },
-          }),
+        const [logs, summary] = await Promise.all([
+          fetchMealLogs(selectedDate),
+          fetchDailySummary(selectedDate),
         ]);
 
         if (!cancelled) {
-          setMealLogs(mealResponse.data);
-          setDailySummary(summaryResponse.data);
+          setMealLogs(logs);
+          setDailySummary(summary);
         }
       } catch {
         if (!cancelled) {
@@ -350,39 +176,18 @@ export default function Dashboard() {
   }, [selectedDate]);
 
   const reloadSelectedDate = async () => {
-    const [mealResponse, summaryResponse] = await Promise.all([
-      api.get<MealLog[]>("/meal-logs", {
-        params: { date: selectedDate },
-      }),
-      api.get<DailyNutritionSummary>("/meal-logs/summary", {
-        params: { date: selectedDate },
-      }),
+    const [logs, summary] = await Promise.all([
+      fetchMealLogs(selectedDate),
+      fetchDailySummary(selectedDate),
     ]);
 
-    setMealLogs(mealResponse.data);
-    setDailySummary(summaryResponse.data);
+    setMealLogs(logs);
+    setDailySummary(summary);
   };
 
   const reloadFhirContext = async () => {
     const response = await api.get<FhirContext>("/fhir/context");
     setFhirContext(response.data);
-  };
-
-  const handleSearchFoods = async () => {
-    if (!searchTerm.trim()) {
-      setSearchResults([]);
-      return;
-    }
-
-    try {
-      const response = await api.get<FoodSearchResult[]>(
-        `/meal-logs/search?q=${encodeURIComponent(searchTerm.trim())}`,
-      );
-      setSearchResults(response.data);
-    } catch {
-      setSearchResults([]);
-      setDashboardError("Food search is currently unavailable.");
-    }
   };
 
   const handleSearchPatients = async (query: string) => {
@@ -408,41 +213,8 @@ export default function Dashboard() {
     setPatientResults([]);
   };
 
-  const addMeal = async () => {
-    if (!selectedFood || servings <= 0) {
-      return;
-    }
-
-    await api.post("/meal-logs", {
-      mealType,
-      notes: `${selectedFood.name} added`,
-      loggedAt: `${selectedDate}T12:00:00`,
-      items: [
-        {
-          fdcId: selectedFood.fdcId,
-          name: selectedFood.name,
-          brand: selectedFood.brand,
-          calories: selectedFood.calories,
-          protein: selectedFood.protein,
-          carbs: selectedFood.carbs,
-          fat: selectedFood.fat,
-          servingSize: selectedFood.servingSize,
-          servingUnit: selectedFood.servingUnit,
-          servings,
-        },
-      ],
-    });
-
-    setSelectedFood(null);
-    setServings(1);
-    setSearchResults([]);
-    setSearchTerm("");
-    setUtilityTab("history");
-    await reloadSelectedDate();
-  };
-
   const deleteMeal = async (id: string) => {
-    await api.delete(`/meal-logs/${id}`);
+    await deleteMealLog(id);
     await reloadSelectedDate();
   };
 
@@ -741,180 +513,15 @@ export default function Dashboard() {
 
             <div className="flex-1 overflow-y-auto px-6 py-6">
               {utilityTab === "log" ? (
-                <div>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
-                    <input
-                      value={searchTerm}
-                      onChange={(event) => setSearchTerm(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          void handleSearchFoods();
-                        }
-                      }}
-                      className="w-full rounded-xl border border-slate-200 py-3 pl-10 pr-4"
-                      placeholder="Search food to log on the selected date..."
-                    />
-                  </div>
-
-                  <button
-                    onClick={() => void handleSearchFoods()}
-                    className="mt-3 rounded-lg bg-[#1e86c8] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#166896]"
-                    type="button"
-                  >
-                    Search USDA Foods
-                  </button>
-
-                  {searchResults.length === 0 ? (
-                    <p className="mt-5 text-sm text-slate-500">
-                      Search by food name and press Enter to load nutrition results.
-                    </p>
-                  ) : (
-                    <div className="mt-5 space-y-3">
-                      {searchResults.map((food) => (
-                        <button
-                          key={food.fdcId}
-                          onClick={() => setSelectedFood(food)}
-                          className="w-full rounded-xl border border-slate-200 p-4 text-left transition hover:bg-slate-50"
-                          type="button"
-                        >
-                          <p className="font-medium text-slate-900">{food.name}</p>
-                          <p className="mt-1 text-xs text-slate-500">{food.brand}</p>
-                          <p className="mt-2 text-sm text-slate-600">
-                            {roundValue(food.calories)} kcal • {roundValue(food.protein)} g
-                            protein
-                          </p>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <MealLogComposer
+                  compact
+                  selectedDate={selectedDate}
+                  onMealCreated={reloadSelectedDate}
+                  onAfterSave={() => setUtilityTab("history")}
+                />
               ) : (
-                <div className="space-y-4">
-                  {mealLogs.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
-                      No meals logged for this date yet.
-                    </div>
-                  ) : (
-                    mealLogs.map((log) => (
-                      <article
-                        key={log.id}
-                        className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="font-semibold text-slate-900">
-                              {formatMealTypeLabel(log.mealType)}
-                            </p>
-                            <p className="mt-1 text-xs text-slate-500">
-                              Logged at{" "}
-                              {new Date(log.loggedAt).toLocaleTimeString([], {
-                                hour: "numeric",
-                                minute: "2-digit",
-                              })}
-                            </p>
-                            {log.notes && (
-                              <p className="mt-2 text-sm text-slate-600">{log.notes}</p>
-                            )}
-                          </div>
-
-                          <button
-                            onClick={() => void deleteMeal(log.id)}
-                            className="rounded-full p-2 text-slate-400 transition hover:bg-red-50 hover:text-red-500"
-                            type="button"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-
-                        <div className="mt-4 space-y-2">
-                          {log.items.map((item) => (
-                            <div
-                              key={item.id}
-                              className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700"
-                            >
-                              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                <div>
-                                  <p className="font-medium text-slate-900">
-                                    {item.foodItem?.name || "Unknown item"}
-                                  </p>
-                                  <p className="text-xs text-slate-500">
-                                    {item.foodItem?.brand || "Generic"} • {item.servings} serving
-                                    {item.servings === 1 ? "" : "s"}
-                                  </p>
-                                </div>
-                                <p className="text-xs font-medium text-emerald-600">
-                                  {roundValue(
-                                    (item.foodItem?.calories || 0) * item.servings,
-                                  )}{" "}
-                                  kcal
-                                </p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </article>
-                    ))
-                  )}
-                </div>
+                <MealHistoryList mealLogs={mealLogs} onDelete={deleteMeal} />
               )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {selectedFood && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6">
-            <h3 className="text-xl font-semibold text-slate-900">Add Meal</h3>
-            <p className="mt-2 text-sm text-slate-500">
-              {selectedFood.name} will be logged to {formatDateLabel(selectedDate)}.
-            </p>
-
-            <div className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-700">
-              <p>{roundValue(selectedFood.calories)} kcal</p>
-              <p className="mt-1">
-                Protein {roundValue(selectedFood.protein)} g • Carbs{" "}
-                {roundValue(selectedFood.carbs)} g • Fat {roundValue(selectedFood.fat)} g
-              </p>
-            </div>
-
-            <select
-              value={mealType}
-              onChange={(event) => setMealType(event.target.value as MealType)}
-              className="mt-4 w-full rounded-xl border border-slate-200 p-3"
-            >
-              {MEAL_TYPES.map((currentMealType) => (
-                <option key={currentMealType} value={currentMealType}>
-                  {formatMealTypeLabel(currentMealType)}
-                </option>
-              ))}
-            </select>
-
-            <input
-              type="number"
-              min="0.25"
-              step="0.25"
-              value={servings}
-              onChange={(event) => setServings(Number(event.target.value))}
-              className="mt-3 w-full rounded-xl border border-slate-200 p-3"
-            />
-
-            <div className="mt-4 flex gap-3">
-              <button
-                onClick={() => setSelectedFood(null)}
-                className="flex-1 rounded-xl border border-slate-200 px-4 py-3 text-slate-600"
-                type="button"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => void addMeal()}
-                className="flex-1 rounded-xl bg-emerald-600 px-4 py-3 font-medium text-white"
-                type="button"
-              >
-                Add Meal
-              </button>
             </div>
           </div>
         </div>
