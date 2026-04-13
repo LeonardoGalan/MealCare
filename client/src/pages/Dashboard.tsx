@@ -519,7 +519,7 @@ export default function Dashboard() {
             ))}
           </div>
           <div className="mt-4 hidden overflow-x-auto rounded-lg border border-sky-100 md:block">
-            <table className="min-w-[38rem] border-collapse text-left text-sm">
+            <table className="w-full min-w-[38rem] border-collapse text-left text-sm">
               <thead className="bg-gradient-to-r from-sky-50 to-cyan-50 text-slate-700">
                 <tr>
                   <th className="px-4 py-2.5 font-semibold">Meals</th>
