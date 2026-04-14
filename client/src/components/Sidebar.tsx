@@ -13,21 +13,21 @@ const navItems = [
 
 export default function Sidebar() {
   return (
-    <aside className="w-64 bg-white border-r border-gray-200 min-h-screen">
-      <nav className="px-4 py-6 space-y-1">
+    <aside className="h-full w-60 shrink-0 bg-[#204f74] text-white shadow-xl">
+      <nav className="space-y-1 px-4 py-5">
         {navItems.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-3 rounded-lg transition ${
+              `flex items-center gap-3 rounded-lg px-4 py-3 transition ${
                 isActive
-                  ? 'bg-emerald-50 text-emerald-700 font-medium'
-                  : 'text-gray-700 hover:bg-gray-100'
+                  ? 'bg-[#1e86c8] text-white font-semibold shadow-sm'
+                  : 'text-slate-100 hover:bg-white/10'
               }`
             }
           >
-            <Icon className="w-5 h-5" />
+            <Icon className="h-5 w-5" />
             <span>{label}</span>
           </NavLink>
         ))}
