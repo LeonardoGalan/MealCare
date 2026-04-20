@@ -3,10 +3,14 @@ import prisma from "./lib/prisma";
 import { authMiddleware } from "./middleware";
 import {
   buildDailyNutritionSummary,
+  buildNutritionProgress,
+  getLocalDateRangeBounds,
   getLocalDayBounds,
+  resolveProgressDays,
   resolveLoggedAt,
   resolveRequestedDate,
 } from "./lib/nutrition";
+import { validateMealLogPayload } from "./lib/meal-log-payload";
 
 const router = new Hono<{ Variables: { userId: string } }>();
 
@@ -77,8 +81,16 @@ router.get("/search", async (c) => {
 // MEAL LOGGING ENDPOINTS
 // ======================
 router.post("/", authMiddleware, async (c) => {
-  const { mealType, notes, items, loggedAt } = await c.req.json();
   const userId = c.get("userId");
+  let payload;
+
+  try {
+    payload = validateMealLogPayload(await c.req.json());
+  } catch (error) {
+    return c.json({ error: (error as Error).message }, 400);
+  }
+
+  const { mealType, notes, items, loggedAt } = payload;
 
   let parsedLoggedAt: Date | undefined;
 
@@ -95,7 +107,7 @@ router.post("/", authMiddleware, async (c) => {
       notes,
       loggedAt: parsedLoggedAt,
       items: {
-        create: items.map((item: any) => {
+        create: items.map((item) => {
           const hasFdcId = item.fdcId !== undefined && item.fdcId !== null;
 
           return {
@@ -103,18 +115,18 @@ router.post("/", authMiddleware, async (c) => {
               ? {
                   connectOrCreate: {
                     where: {
-                      usdaFdcId: item.fdcId.toString(),
+                      usdaFdcId: item.fdcId,
                     },
                     create: {
-                      usdaFdcId: item.fdcId.toString(),
+                      usdaFdcId: item.fdcId,
                       name: item.name,
                       brand: item.brand || null,
-                      calories: item.calories || 0,
-                      protein: item.protein || 0,
-                      carbs: item.carbs || 0,
-                      fat: item.fat || 0,
-                      servingSize: item.servingSize || 1,
-                      servingUnit: item.servingUnit || "serving",
+                      calories: item.calories,
+                      protein: item.protein,
+                      carbs: item.carbs,
+                      fat: item.fat,
+                      servingSize: item.servingSize,
+                      servingUnit: item.servingUnit,
                     },
                   },
                 }
@@ -122,15 +134,15 @@ router.post("/", authMiddleware, async (c) => {
                   create: {
                     name: item.name,
                     brand: item.brand || null,
-                    calories: item.calories || 0,
-                    protein: item.protein || 0,
-                    carbs: item.carbs || 0,
-                    fat: item.fat || 0,
-                    servingSize: item.servingSize || 1,
-                    servingUnit: item.servingUnit || "serving",
+                    calories: item.calories,
+                    protein: item.protein,
+                    carbs: item.carbs,
+                    fat: item.fat,
+                    servingSize: item.servingSize,
+                    servingUnit: item.servingUnit,
                   },
                 },
-            servings: item.servings || 1,
+            servings: item.servings,
           };
         }),
       },
@@ -166,6 +178,37 @@ router.get("/summary", authMiddleware, async (c) => {
   });
 
   return c.json(buildDailyNutritionSummary(date, logs));
+});
+
+router.get("/progress", authMiddleware, async (c) => {
+  const userId = c.get("userId");
+  const rawDate = c.req.query("date");
+  const rawDays = c.req.query("days");
+
+  let date: string;
+  let days: 7 | 30;
+
+  try {
+    date = resolveRequestedDate(rawDate);
+    days = resolveProgressDays(rawDays);
+  } catch (error) {
+    return c.json({ error: (error as Error).message }, 400);
+  }
+
+  const { start, end } = getLocalDateRangeBounds(date, days);
+  const logs = await prisma.mealLog.findMany({
+    where: {
+      userId,
+      loggedAt: {
+        gte: start,
+        lt: end,
+      },
+    },
+    include: { items: { include: { foodItem: true } } },
+    orderBy: { loggedAt: "asc" },
+  });
+
+  return c.json(buildNutritionProgress(date, days, logs));
 });
 
 router.get("/", authMiddleware, async (c) => {

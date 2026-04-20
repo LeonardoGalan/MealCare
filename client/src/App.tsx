@@ -3,6 +3,7 @@ import { useState } from "react";
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
+import LogMeal from './pages/LogMeal';
 import Layout from "./components/Layout";
 
 function App() {
@@ -55,6 +56,7 @@ function App() {
           }
         >
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/log-meal" element={<LogMeal />} />
         </Route>
 
         <Route path="/" element={<Navigate to="/login" />} />
