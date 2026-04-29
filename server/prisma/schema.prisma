@@ -21,11 +21,24 @@ model User {
 
   mealLogs      MealLog[]
   mealPlans     MealPlan[]
+  conditions    UserCondition[]
   allergies     UserAllergy[]
 
   @@map("users")
 }
+model FhirPatient {
+  id          String   @id @default(uuid())
+  fhirId      String   @unique @map("fhir_id")
+  firstName   String   @map("first_name")
+  lastName    String   @map("last_name")
+  birthDate   String?  @map("birth_date")
+  gender      String?
+  conditions  String?  @default("[]")
+  allergies   String?  @default("[]")
+  createdAt   DateTime @default(now()) @map("created_at")
 
+  @@map("fhir_patients")
+}
 // model for the meal log, which will be a list of meals listed by what the user ate
 model MealLog {
   id        String   @id @default(uuid())
@@ -110,8 +123,19 @@ model MealPlanItem {
 }
 
 
-// using and structuring only 1 fhir resource for now
 
+model UserCondition {
+  id          String @id @default(uuid())
+  userId      String @map("user_id")
+  code        String
+  display     String
+  fhirId      String @map("fhir_id")
+
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, fhirId])
+  @@map("user_conditions")
+}
 model UserAllergy {
   id          String @id @default(uuid())
   userId      String @map("user_id")

@@ -5,8 +5,32 @@ import {
   buildProviderSuggestions,
   extractAllergyNames,
   extractConditionNames,
+  buildFoodsToAvoid,
+  isDietRelevant,
 } from "./lib/fhir-context";
 import { buildPatientSearchPath } from "./lib/fhir-search";
+
+
+type ConditionBundle = {
+  entry?: Array<{
+    resource?: {
+      id?: string;
+      code?: {
+        text?: string;
+        coding?: Array<{ display?: string; code?: string }>;
+      };
+    };
+  }>;
+};
+
+type AllergyBundle = {
+  entry?: Array<{
+    resource?: {
+      id?: string;
+      code?: { text?: string; coding?: Array<{ display?: string }> };
+    };
+  }>;
+};
 
 const router = new Hono<{ Variables: { userId: string } }>();
 const FHIR_BASE_URL = "http://localhost:8080/fhir";
@@ -21,24 +45,44 @@ async function fetchFhirJson<T>(path: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-// Search FHIR patients (by name)
 router.get("/search", async (c) => {
   const query = c.req.query("q") || "";
-  const path = buildPatientSearchPath(query);
-
-  if (path.endsWith("_count=0")) {
-    return c.json([]);
-  }
 
   try {
+    const path = buildPatientSearchPath(query);
+    if (path.endsWith("_count=0")) {
+      return c.json([]);
+    }
     const data = await fetchFhirJson<{ entry?: unknown[] }>(path);
     return c.json(data.entry || []);
   } catch {
-    return c.json({ error: "FHIR server unreachable" }, 500);
+    try {
+      const patients = await prisma.fhirPatient.findMany({
+        where: {
+          OR: [
+            { firstName: { contains: query, mode: "insensitive" } },
+            { lastName: { contains: query, mode: "insensitive" } },
+          ],
+        },
+      });
+
+      return c.json(
+        patients.map((p) => ({
+          resource: {
+            id: p.fhirId,
+            name: [{ given: [p.firstName], family: p.lastName }],
+            birthDate: p.birthDate,
+            gender: p.gender,
+          },
+        })),
+      );
+    } catch (dbErr) {
+      console.error("Database fallback failed:", dbErr);
+      return c.json({ error: "Patient search unavailable" }, 500);
+    }
   }
 });
 
-// Link a FHIR patient to the logged-in user
 router.post("/link", authMiddleware, async (c) => {
   const { fhirPatientId } = await c.req.json();
   const userId = c.get("userId");
@@ -48,6 +92,117 @@ router.post("/link", authMiddleware, async (c) => {
     data: { fhirPatientId },
     select: { id: true, fhirPatientId: true },
   });
+
+  if (fhirPatientId) {
+    await prisma.userCondition.deleteMany({ where: { userId } });
+    await prisma.userAllergy.deleteMany({ where: { userId } });
+
+    let cached = false;
+
+    try {
+      const [conditionBundle, allergyBundle] = await Promise.all([
+        fetchFhirJson<ConditionBundle>(
+          `/Condition?patient=${fhirPatientId}&_format=json`,
+        ),
+        fetchFhirJson<AllergyBundle>(
+          `/AllergyIntolerance?patient=${fhirPatientId}&_format=json`,
+        ),
+      ]);
+
+      for (const entry of conditionBundle.entry || []) {
+        const resource = entry.resource;
+        if (!resource?.id) continue;
+        await prisma.userCondition.upsert({
+          where: { userId_fhirId: { userId, fhirId: resource.id } },
+          update: {
+            display:
+              resource.code?.coding?.[0]?.display ||
+              resource.code?.text ||
+              "Unknown",
+            code: resource.code?.coding?.[0]?.code || "unknown",
+          },
+          create: {
+            userId,
+            fhirId: resource.id,
+            display:
+              resource.code?.coding?.[0]?.display ||
+              resource.code?.text ||
+              "Unknown",
+            code: resource.code?.coding?.[0]?.code || "unknown",
+          },
+        });
+      }
+
+      for (const entry of allergyBundle.entry || []) {
+        const resource = entry.resource;
+        if (!resource?.id) continue;
+        await prisma.userAllergy.upsert({
+          where: { userId_fhirId: { userId, fhirId: resource.id } },
+          update: {
+            substance:
+              resource.code?.coding?.[0]?.display ||
+              resource.code?.text ||
+              "Unknown",
+          },
+          create: {
+            userId,
+            fhirId: resource.id,
+            substance:
+              resource.code?.coding?.[0]?.display ||
+              resource.code?.text ||
+              "Unknown",
+          },
+        });
+      }
+
+      cached = true;
+      console.log(`Cached FHIR data from server for user ${userId}`);
+    } catch {
+      console.log("FHIR unavailable during link");
+    }
+
+    if (!cached) {
+      const fhirPatient = await prisma.fhirPatient.findUnique({
+        where: { fhirId: fhirPatientId },
+      });
+
+      if (fhirPatient) {
+        const conditions = JSON.parse(fhirPatient.conditions || "[]");
+        const allergies = JSON.parse(fhirPatient.allergies || "[]");
+
+        for (const cond of conditions) {
+          await prisma.userCondition.upsert({
+            where: { userId_fhirId: { userId, fhirId: cond.fhirId } },
+            update: { display: cond.display, code: cond.code },
+            create: {
+              userId,
+              fhirId: cond.fhirId,
+              display: cond.display,
+              code: cond.code,
+            },
+          });
+        }
+
+        for (const allergy of allergies) {
+          await prisma.userAllergy.upsert({
+            where: { userId_fhirId: { userId, fhirId: allergy.fhirId } },
+            update: { substance: allergy.substance },
+            create: {
+              userId,
+              fhirId: allergy.fhirId,
+              substance: allergy.substance,
+            },
+          });
+        }
+
+        console.log(
+          `Loaded cached data from fhir_patients for ${fhirPatientId}`,
+        );
+      } else {
+        console.log(`No cached data available for ${fhirPatientId}`);
+      }
+    }
+  }
 
   return c.json({ message: "Patient linked successfully", user });
 });
@@ -71,14 +226,23 @@ router.get("/context", authMiddleware, async (c) => {
   }
 
   try {
+    // Using local fhir server data first
     const [patient, conditionBundle, allergyBundle] = await Promise.all([
       fetchFhirJson(`/Patient/${user.fhirPatientId}`),
-      fetchFhirJson<{ entry?: Array<{ resource?: { code?: { text?: string; coding?: Array<{ display?: string }> } } }> }>(
-        `/Condition?patient=${user.fhirPatientId}&_format=json`,
-      ),
-      fetchFhirJson<{ entry?: Array<{ resource?: { code?: { text?: string; coding?: Array<{ display?: string }> } } }> }>(
-        `/AllergyIntolerance?patient=${user.fhirPatientId}&_format=json`,
-      ),
+      fetchFhirJson<{
+        entry?: Array<{
+          resource?: {
+            code?: { text?: string; coding?: Array<{ display?: string }> };
+          };
+        }>;
+      }>(`/Condition?patient=${user.fhirPatientId}&_format=json`),
+      fetchFhirJson<{
+        entry?: Array<{
+          resource?: {
+            code?: { text?: string; coding?: Array<{ display?: string }> };
+          };
+        }>;
+      }>(`/AllergyIntolerance?patient=${user.fhirPatientId}&_format=json`),
     ]);
 
     const conditions = extractConditionNames(conditionBundle);
@@ -90,13 +254,84 @@ router.get("/context", authMiddleware, async (c) => {
       allergies,
       providerSuggestions: buildProviderSuggestions(conditions, allergies),
     });
-  } catch (error) {
-    console.error(error);
-    return c.json({ error: "FHIR context unavailable" }, 500);
+  } catch {
+    console.log("FHIR unavailable, using cached data");
+
+    const [cachedConditions, cachedAllergies] = await Promise.all([
+      prisma.userCondition.findMany({ where: { userId } }),
+      prisma.userAllergy.findMany({ where: { userId } }),
+    ]);
+
+    const conditionNames = cachedConditions
+      .map((c) => c.display)
+      .filter(isDietRelevant);
+    const allergyNames = cachedAllergies.map((a) => a.substance);
+
+    return c.json({
+      patient: { id: user.fhirPatientId },
+      conditions: conditionNames,
+      allergies: allergyNames,
+      providerSuggestions: buildProviderSuggestions(
+        conditionNames,
+        allergyNames,
+      ),
+    });
   }
 });
 
-// Get full patient details (including name, gender, birthDate, etc.)
+router.get("/foods-to-avoid", authMiddleware, async (c) => {
+  const userId = c.get("userId");
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { fhirPatientId: true },
+  });
+
+  if (!user?.fhirPatientId) {
+    return c.json({
+      foods: [],
+      message: "Link a FHIR patient to see personalized food recommendations.",
+    });
+  }
+
+  let conditions: string[];
+  let allergies: string[];
+
+  try {
+    const [conditionBundle, allergyBundle] = await Promise.all([
+      fetchFhirJson<{
+        entry?: Array<{
+          resource?: {
+            code?: { text?: string; coding?: Array<{ display?: string }> };
+          };
+        }>;
+      }>(`/Condition?patient=${user.fhirPatientId}&_format=json`),
+      fetchFhirJson<{
+        entry?: Array<{
+          resource?: {
+            code?: { text?: string; coding?: Array<{ display?: string }> };
+          };
+        }>;
+      }>(`/AllergyIntolerance?patient=${user.fhirPatientId}&_format=json`),
+    ]);
+
+    conditions = extractConditionNames(conditionBundle);
+    allergies = extractAllergyNames(allergyBundle);
+  } catch {
+    console.log("FHIR unavailable, using cached data for foods-to-avoid");
+
+    const [cachedConditions, cachedAllergies] = await Promise.all([
+      prisma.userCondition.findMany({ where: { userId } }),
+      prisma.userAllergy.findMany({ where: { userId } }),
+    ]);
+
+    conditions = cachedConditions.map((c) => c.display).filter(isDietRelevant);
+    allergies = cachedAllergies.map((a) => a.substance);
+  }
+
+  const foods = buildFoodsToAvoid(conditions, allergies);
+  return c.json({ foods, conditions, allergies });
+});
+
 router.get("/patient/:id", async (c) => {
   const id = c.req.param("id");
   try {
