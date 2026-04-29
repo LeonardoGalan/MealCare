@@ -5,6 +5,8 @@ import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import LogMeal from './pages/LogMeal';
 import Layout from "./components/Layout";
+import MealsToAvoid from "./pages/MealsToAvoid";
+import ProfileSettings from "./pages/ProfileSettings";
 
 function App() {
   // useState within useEffect creates unneeded re-renders, better to check boolean val at start of render
@@ -57,6 +59,8 @@ function App() {
         >
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/log-meal" element={<LogMeal />} />
+          <Route path="/meals-to-avoid" element={<MealsToAvoid />} />
+          <Route path="/profile" element={<ProfileSettings />} />
         </Route>
 
         <Route path="/" element={<Navigate to="/login" />} />
