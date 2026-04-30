@@ -8,6 +8,8 @@ type UserData = {
   firstName: string;
   lastName: string;
   fhirPatientId: string | null;
+  weightLbs: number | null;
+  heightIn: number | null;
 };
 
 export default function ProfileSettings() {
@@ -16,6 +18,8 @@ export default function ProfileSettings() {
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [weightLbs, setWeightLbs] = useState<string>("");
+  const [heightIn, setHeightIn] = useState<string>("");
   const [email, setEmail] = useState("");
   const [profileMsg, setProfileMsg] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -36,6 +40,8 @@ export default function ProfileSettings() {
         setFirstName(res.data.firstName);
         setLastName(res.data.lastName);
         setEmail(res.data.email);
+        setWeightLbs(res.data.weightLbs?.toString() || "");
+        setHeightIn(res.data.heightIn?.toString() || "");
       } catch {
         setProfileError("Failed to load profile.");
       } finally {
@@ -54,13 +60,16 @@ export default function ProfileSettings() {
         firstName,
         lastName,
         email,
+        weightLbs: weightLbs ? parseFloat(weightLbs) : null,
+        heightIn: heightIn ? parseFloat(heightIn) : null,
       });
       setUser(res.data);
       setProfileMsg("Profile updated successfully.");
     } catch (err: unknown) {
       const message =
         err && typeof err === "object" && "response" in err
-          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+          ? (err as { response?: { data?: { error?: string } } }).response?.data
+              ?.error
           : null;
       setProfileError(message || "Failed to update profile.");
     }
@@ -89,7 +98,8 @@ export default function ProfileSettings() {
     } catch (err: unknown) {
       const message =
         err && typeof err === "object" && "response" in err
-          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+          ? (err as { response?: { data?: { error?: string } } }).response?.data
+              ?.error
           : null;
       setPasswordError(message || "Failed to change password.");
     }
@@ -162,6 +172,76 @@ export default function ProfileSettings() {
               className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
             />
           </label>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="text-sm text-slate-600">
+              Weight (lbs)
+              <input
+                type="number"
+                value={weightLbs}
+                onChange={(e) => setWeightLbs(e.target.value)}
+                placeholder="e.g. 170"
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+              />
+            </label>
+            <label className="text-sm text-slate-600">
+              Height
+              <div className="mt-1 flex gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="number"
+                    value={
+                      heightIn
+                        ? Math.floor(Number(heightIn) / 12).toString()
+                        : ""
+                    }
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === "") {
+                        setHeightIn("0");
+                        return;
+                      }
+                      const feet = Number(val);
+                      if (feet < 0 || feet > 8) return;
+                      const inches = Number(heightIn) % 12;
+                      setHeightIn((feet * 12 + inches).toString());
+                    }}
+                    placeholder="ft"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                  />
+                  <span className="absolute right-3 top-2 text-sm text-slate-400">
+                    ft
+                  </span>
+                </div>
+                <div className="relative flex-1">
+                  <input
+                    type="number"
+                    value={
+                      heightIn
+                        ? Math.round(Number(heightIn) % 12).toString()
+                        : ""
+                    }
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === "") {
+                        const feet = Math.floor(Number(heightIn) / 12);
+                        setHeightIn((feet * 12).toString());
+                        return;
+                      }
+                      const inches = Number(val);
+                      if (inches < 0 || inches > 11) return;
+                      const feet = Math.floor(Number(heightIn) / 12);
+                      setHeightIn((feet * 12 + inches).toString());
+                    }}
+                    placeholder="in"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                  />
+                  <span className="absolute right-3 top-2 text-sm text-slate-400">
+                    in
+                  </span>
+                </div>
+              </div>
+            </label>
+          </div>
 
           <button
             onClick={handleUpdateProfile}
@@ -183,7 +263,8 @@ export default function ProfileSettings() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-slate-700">
-                  Linked to Patient ID: <span className="font-semibold">{user.fhirPatientId}</span>
+                  Linked to Patient ID:{" "}
+                  <span className="font-semibold">{user.fhirPatientId}</span>
                 </p>
               </div>
               <button
@@ -272,9 +353,12 @@ export default function ProfileSettings() {
           {!showDeleteConfirm ? (
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-slate-700 font-medium">Delete your account</p>
+                <p className="text-sm text-slate-700 font-medium">
+                  Delete your account
+                </p>
                 <p className="text-sm text-slate-500 mt-0.5">
-                  This will permanently delete your account and all associated data.
+                  This will permanently delete your account and all associated
+                  data.
                 </p>
               </div>
               <button

@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import authRouter from "./auth";
 import fhirRouter from "./fhir";
 import mealRouter from "./meal";
+import mealPlanRouter from "./meal-plan";
 import { authMiddleware } from "./middleware";
 import prisma from "./lib/prisma";
 
@@ -18,6 +19,7 @@ export function createApp() {
   app.route("/auth", authRouter);
   app.route("/fhir", fhirRouter);
   app.route("/meal-logs", mealRouter);
+  app.route("/meal-plan", mealPlanRouter);
 
   app.get("/me", authMiddleware, async (c) => {
     const userId = c.get("userId");
@@ -29,10 +31,46 @@ export function createApp() {
         firstName: true,
         lastName: true,
         fhirPatientId: true,
+        weightLbs: true,
+        heightIn: true,
       },
     });
-    return c.json(user);
+
+    if (!user) return c.json({ error: "User not found" }, 404);
+
+    let calorieGoal = 2000;
+
+    if (user.weightLbs && user.heightIn && user.fhirPatientId) {
+      const fhirPatient = await prisma.fhirPatient.findUnique({
+        where: { fhirId: user.fhirPatientId },
+      });
+
+      if (fhirPatient?.birthDate && fhirPatient?.gender) {
+        const birth = new Date(fhirPatient.birthDate);
+        const age = Math.floor(
+          (Date.now() - birth.getTime()) / (365.25 * 24 * 60 * 60 * 1000),
+        );
+        const weightKg = user.weightLbs * 0.453592;
+        const heightCm = user.heightIn * 2.54;
+
+        if (fhirPatient.gender === "male") {
+          calorieGoal = Math.round(
+            10 * weightKg + 6.25 * heightCm - 5 * age + 5,
+          );
+        } else {
+          calorieGoal = Math.round(
+            10 * weightKg + 6.25 * heightCm - 5 * age - 161,
+          );
+        }
+
+        // Multiply by activity factor (assuming lightly active)
+        calorieGoal = Math.round(calorieGoal * 1.375);
+      }
+    }
+
+    return c.json({ ...user, calorieGoal });
   });
+
 
   app.get("/", (c) => c.text("MealCare API is running!"));
 

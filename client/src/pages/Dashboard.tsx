@@ -35,6 +35,9 @@ type UserData = {
   firstName: string;
   lastName: string;
   fhirPatientId: string | null;
+  weightLbs: number | null;
+  heightIn: number | null;
+  calorieGoal: number;
 };
 
 type HumanName = {
@@ -62,7 +65,6 @@ type PatientSearchEntry = {
     name?: HumanName[];
   };
 };
-const CALORIE_GOAL = 2000;
 
 function createEmptyFhirContext(): FhirContext {
   return {
@@ -121,7 +123,9 @@ export default function Dashboard() {
   const [progressError, setProgressError] = useState<string | null>(null);
   const [isUtilityPanelOpen, setIsUtilityPanelOpen] = useState(false);
   const [utilityTab, setUtilityTab] = useState<UtilityTab>("log");
+  const [macroView, setMacroView] = useState<"goals" | "breakdown">("goals");
 
+  const calorieGoal = user?.calorieGoal || 2000;
   useEffect(() => {
     let cancelled = false;
 
@@ -240,16 +244,9 @@ export default function Dashboard() {
     setFhirContext(response.data);
   };
 
-  const handleSearchPatients = async (query: string) => {
-    if (!query.trim()) {
-      setPatientResults([]);
-      return;
-    }
-
+  const loadPatients = async () => {
     try {
-      const response = await api.get<PatientSearchEntry[]>(
-        `/fhir/search?q=${encodeURIComponent(query.trim())}`,
-      );
+      const response = await api.get<PatientSearchEntry[]>("/fhir/patients");
       setPatientResults(response.data);
     } catch {
       setPatientResults([]);
@@ -277,7 +274,7 @@ export default function Dashboard() {
   const macroPercentages = calculateMacroPercentages(dailySummary.totals);
   const calorieProgress = Math.min(
     100,
-    Math.round((dailySummary.totals.calories / CALORIE_GOAL) * 100),
+    Math.round((dailySummary.totals.calories / calorieGoal) * 100),
   );
   const patientName = formatPatientName(fhirContext.patient, user);
   const trendBuckets = progressSummary?.buckets ?? [];
@@ -298,32 +295,103 @@ export default function Dashboard() {
             </h2>
             <div className="mt-4 space-y-2.5 text-sm text-slate-700">
               <p>
-                <span className="font-semibold text-slate-800">Name:</span> {patientName}
+                <span className="font-semibold text-slate-800">Name:</span>{" "}
+                {patientName}
               </p>
               <p>
                 <span className="font-semibold text-slate-800">Email:</span>{" "}
                 {user?.email || "Unavailable"}
               </p>
               <p>
-                <span className="font-semibold text-slate-800">Conditions:</span>{" "}
-                {formatValueList(fhirContext.conditions, "No linked conditions found")}
+                <span className="font-semibold text-slate-800">
+                  Conditions:
+                </span>{" "}
+                {formatValueList(
+                  fhirContext.conditions,
+                  "No linked conditions found",
+                )}
               </p>
               <p>
                 <span className="font-semibold text-slate-800">Allergies:</span>{" "}
                 <span className="text-rose-500">
-                  {formatValueList(fhirContext.allergies, "No known allergies found")}
+                  {formatValueList(
+                    fhirContext.allergies,
+                    "No known allergies found",
+                  )}
                 </span>
               </p>
             </div>
+            {(!user?.weightLbs || !user?.heightIn) && (
+              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <p className="text-xs font-semibold text-amber-800 mb-2">
+                  Enter your measurements for personalized calorie goals
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    placeholder="Weight (lbs)"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                    onBlur={async (e) => {
+                      const val = parseFloat(e.target.value);
+                      if (val > 0) {
+                        const res = await api.put<UserData>("/auth/profile", {
+                          weightLbs: val,
+                        });
+                        setUser(res.data);
+                      }
+                    }}
+                  />
+                  <input
+                    type="number"
+                    placeholder="Height (in)"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                    onBlur={async (e) => {
+                      const val = parseFloat(e.target.value);
+                      if (val > 0) {
+                        const res = await api.put<UserData>("/auth/profile", {
+                          heightIn: val,
+                        });
+                        setUser(res.data);
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {user?.weightLbs && user?.heightIn && (
+              <div className="mt-4 space-y-2.5 text-sm text-slate-700">
+                <p>
+                  <span className="font-semibold text-slate-800">Weight:</span>{" "}
+                  {user.weightLbs} lbs
+                </p>
+                <p>
+                  <span className="font-semibold text-slate-800">Height:</span>{" "}
+                  {Math.floor(user.heightIn / 12)}'
+                  {Math.round(user.heightIn % 12)}"
+                </p>
+                <p>
+                  <span className="font-semibold text-slate-800">
+                    Daily Calorie Goal:
+                  </span>{" "}
+                  {calorieGoal} kcal
+                </p>
+              </div>
+            )}
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <button
-                onClick={() => setShowLinkModal(true)}
+                onClick={async () => {
+                  setShowLinkModal(true);
+                  await loadPatients();
+                }}
                 className="inline-flex items-center gap-2 rounded-lg border border-sky-200 bg-white px-3 py-2 text-xs font-medium text-[#205278] transition hover:bg-sky-50"
                 type="button"
               >
                 <Link2 className="h-4 w-4" />
-                {fhirContext.patient ? "Relink Patient" : "Link FHIR Patient"}
+                {fhirContext.patient
+                  ? "Relink Patient Data"
+                  : "Link FHIR Patient Data"}
               </button>
 
               {fhirContext.patient?.birthDate && (
@@ -368,7 +436,9 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                  <p className="text-sm text-slate-500">{formatDateLabel(selectedDate)}</p>
+                  <p className="text-sm text-slate-500">
+                    {formatDateLabel(selectedDate)}
+                  </p>
                   {summaryView === "trends" && (
                     <div className="inline-flex rounded-full bg-white/80 p-1 text-[11px] font-medium text-slate-600 shadow-sm">
                       {[7, 30].map((days) => (
@@ -422,7 +492,8 @@ export default function Dashboard() {
                   <div className="flex items-center justify-between text-sm font-semibold text-slate-800">
                     <span>Calories</span>
                     <span>
-                      {roundValue(dailySummary.totals.calories)} / {CALORIE_GOAL} kcal
+                      {roundValue(dailySummary.totals.calories)} / {calorieGoal}{" "}
+                      kcal{" "}
                     </span>
                   </div>
                   <div className="mt-2.5 h-3 rounded-full bg-sky-100">
@@ -456,7 +527,9 @@ export default function Dashboard() {
                       className="rounded-lg border border-white/60 bg-white/80 px-3 py-2.5 shadow-sm"
                     >
                       <p className="text-xs text-slate-500">{item.label}</p>
-                      <p className={`mt-1 text-lg font-semibold ${item.accent}`}>
+                      <p
+                        className={`mt-1 text-lg font-semibold ${item.accent}`}
+                      >
                         {item.value}
                       </p>
                     </div>
@@ -494,7 +567,7 @@ export default function Dashboard() {
 
         <section className="mt-3 rounded-xl border border-sky-100 bg-white p-4 shadow-sm shadow-sky-100/60">
           <h2 className="text-[1.45rem] font-bold leading-tight text-slate-800 sm:text-[1.8rem]">
-            Today&apos;s Meal Plan
+            Today&apos;s Meals
           </h2>
           <div className="mt-4 space-y-2.5 md:hidden">
             {MEAL_TYPES.map((currentMealType) => (
@@ -512,7 +585,10 @@ export default function Dashboard() {
                     </p>
                   </div>
                   <p className="whitespace-nowrap text-sm font-semibold text-emerald-500">
-                    {roundValue(dailySummary.byMealType[currentMealType].calories)} kcal
+                    {roundValue(
+                      dailySummary.byMealType[currentMealType].calories,
+                    )}{" "}
+                    kcal
                   </p>
                 </div>
               </div>
@@ -524,7 +600,9 @@ export default function Dashboard() {
                 <tr>
                   <th className="px-4 py-2.5 font-semibold">Meals</th>
                   <th className="px-4 py-2.5 font-semibold">Description</th>
-                  <th className="px-4 py-2.5 text-right font-semibold">Calories</th>
+                  <th className="px-4 py-2.5 text-right font-semibold">
+                    Calories
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -540,7 +618,10 @@ export default function Dashboard() {
                       {buildMealDescription(groupedMeals[currentMealType])}
                     </td>
                     <td className="px-4 py-3 text-right font-medium text-emerald-500">
-                      {roundValue(dailySummary.byMealType[currentMealType].calories)} kcal
+                      {roundValue(
+                        dailySummary.byMealType[currentMealType].calories,
+                      )}{" "}
+                      kcal
                     </td>
                   </tr>
                 ))}
@@ -551,48 +632,149 @@ export default function Dashboard() {
 
         <div className="mt-3 grid gap-3 xl:grid-cols-[1fr,0.95fr]">
           <section className="rounded-xl border border-sky-100 bg-gradient-to-br from-white via-[#fafdff] to-sky-50 p-4 shadow-sm shadow-sky-100/60">
-            <h2 className="text-[1.45rem] font-bold leading-tight text-slate-800 sm:text-[1.8rem]">
-              {summaryView === "today"
-                ? "Macronutrient Breakdown of Today's Meal"
-                : "Macronutrient Trends"}
-            </h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-[1.45rem] font-bold leading-tight text-slate-800 sm:text-[1.8rem]">
+                {summaryView !== "today"
+                  ? "Macronutrient Trends"
+                  : macroView === "goals"
+                    ? "Daily Macronutrient Goals"
+                    : "Daily Macronutrient Breakdown"}
+              </h2>
+              {summaryView === "today" && (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setMacroView("goals")}
+                    className={`rounded-lg px-2 py-1 text-xs font-medium transition ${
+                      macroView === "goals"
+                        ? "bg-sky-100 text-[#205278]"
+                        : "text-slate-400 hover:text-slate-600"
+                    }`}
+                    type="button"
+                  >
+                    Goals
+                  </button>
+                  <button
+                    onClick={() => setMacroView("breakdown")}
+                    className={`rounded-lg px-2 py-1 text-xs font-medium transition ${
+                      macroView === "breakdown"
+                        ? "bg-sky-100 text-[#205278]"
+                        : "text-slate-400 hover:text-slate-600"
+                    }`}
+                    type="button"
+                  >
+                    Breakdown
+                  </button>
+                </div>
+              )}
+            </div>
 
             {summaryView === "today" ? (
-              <div className="mt-5 space-y-4">
-                {[
-                  {
-                    label: "Protein",
-                    value: macroPercentages.protein,
-                    color: "bg-emerald-500",
-                  },
-                  {
-                    label: "Carbs",
-                    value: macroPercentages.carbs,
-                    color: "bg-[#1e7cb6]",
-                  },
-                  {
-                    label: "Fat",
-                    value: macroPercentages.fat,
-                    color: "bg-amber-400",
-                  },
-                ].map((macro) => (
-                  <div
-                    key={macro.label}
-                    className="grid items-center gap-3 sm:grid-cols-[78px,1fr,48px]"
-                  >
-                    <p className="text-lg font-semibold text-slate-800">{macro.label}</p>
-                    <div className="h-4 rounded-md bg-sky-100">
-                      <div
-                        className={`h-4 rounded-md ${macro.color} transition-all`}
-                        style={{ width: `${macro.value}%` }}
-                      />
+              macroView === "goals" ? (
+                (() => {
+                  const proteinGoal = Math.round((calorieGoal * 0.3) / 4);
+                  const carbsGoal = Math.round((calorieGoal * 0.45) / 4);
+                  const fatGoal = Math.round((calorieGoal * 0.25) / 9);
+
+                  const macros = [
+                    {
+                      label: "Protein",
+                      current: Math.round(dailySummary.totals.protein),
+                      goal: proteinGoal,
+                      unit: "g",
+                      color: "bg-emerald-500",
+                      accent: "text-emerald-600",
+                    },
+                    {
+                      label: "Carbs",
+                      current: Math.round(dailySummary.totals.carbs),
+                      goal: carbsGoal,
+                      unit: "g",
+                      color: "bg-[#1e7cb6]",
+                      accent: "text-[#1e7cb6]",
+                    },
+                    {
+                      label: "Fat",
+                      current: Math.round(dailySummary.totals.fat),
+                      goal: fatGoal,
+                      unit: "g",
+                      color: "bg-amber-400",
+                      accent: "text-amber-500",
+                    },
+                  ];
+
+                  return (
+                    <div className="mt-5 space-y-4">
+                      {macros.map((macro) => {
+                        const progress = Math.min(
+                          100,
+                          Math.round((macro.current / macro.goal) * 100),
+                        );
+                        return (
+                          <div key={macro.label} className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <p className="text-lg font-semibold text-slate-800">
+                                {macro.label}
+                              </p>
+                              <p
+                                className={`text-sm font-semibold ${macro.accent}`}
+                              >
+                                {macro.current} / {macro.goal} {macro.unit}
+                              </p>
+                            </div>
+                            <div className="h-4 rounded-md bg-sky-100">
+                              <div
+                                className={`h-4 rounded-md ${macro.color} transition-all`}
+                                style={{ width: `${progress}%` }}
+                              />
+                            </div>
+                            <p className="text-xs text-slate-400 text-right">
+                              {progress}% of daily goal
+                            </p>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <p className="text-right text-lg font-semibold text-slate-800">
-                      {macro.value}%
-                    </p>
-                  </div>
-                ))}
-              </div>
+                  );
+                })()
+              ) : (
+                <div className="mt-5 space-y-4">
+                  {[
+                    {
+                      label: "Protein",
+                      value: macroPercentages.protein,
+                      color: "bg-emerald-500",
+                    },
+                    {
+                      label: "Carbs",
+                      value: macroPercentages.carbs,
+                      color: "bg-[#1e7cb6]",
+                    },
+                    {
+                      label: "Fat",
+                      value: macroPercentages.fat,
+                      color: "bg-amber-400",
+                    },
+                  ].map((macro) => (
+                    <div
+                      key={macro.label}
+                      className="grid items-center gap-3 sm:grid-cols-[78px,1fr,48px]"
+                    >
+                      <p className="text-lg font-semibold text-slate-800">
+                        {macro.label}
+                      </p>
+                      <div className="h-4 rounded-md bg-sky-100">
+                        <div
+                          className={`h-4 rounded-md ${macro.color} transition-all`}
+                          style={{ width: `${macro.value}%` }}
+                        />
+                      </div>
+                      <p className="text-right text-lg font-semibold text-slate-800">
+                        {macro.value}%
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )
             ) : isLoadingProgress ? (
               <div className="mt-4 rounded-xl border border-white/70 bg-white/80 px-4 py-8 text-sm text-slate-500 shadow-sm">
                 Loading macro trends...
@@ -628,7 +810,9 @@ export default function Dashboard() {
                 <h3 className="text-xl font-semibold text-slate-900">
                   {utilityTab === "log" ? "Quick Log Meal" : "Meal History"}
                 </h3>
-                <p className="mt-1 text-sm text-slate-500">{formatDateLabel(selectedDate)}</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  {formatDateLabel(selectedDate)}
+                </p>
               </div>
               <button
                 onClick={() => setIsUtilityPanelOpen(false)}
@@ -683,34 +867,37 @@ export default function Dashboard() {
       {showLinkModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6">
-            <h3 className="text-xl font-semibold text-slate-900">Link FHIR Patient</h3>
+            <h3 className="text-xl font-semibold text-slate-900">
+              Link FHIR Patient
+            </h3>
 
-            <input
-              placeholder="Search patient..."
-              onChange={(event) => {
-                void handleSearchPatients(event.target.value);
-              }}
-              className="mt-4 w-full rounded-lg border border-slate-200 p-3"
-            />
-
-            <div className="mt-4 max-h-48 space-y-2 overflow-auto">
-              {patientResults.map((entry) => {
-                const name = entry.resource.name?.[0];
-                return (
-                  <button
-                    key={entry.resource.id}
-                    onClick={() => void linkPatient(entry.resource.id)}
-                    className="w-full rounded-lg border border-slate-200 p-3 text-left transition hover:bg-slate-50"
-                    type="button"
-                  >
-                    {name?.given?.join(" ")} {name?.family}
-                  </button>
-                );
-              })}
+            <div className="mt-4 max-h-64 space-y-2 overflow-auto">
+              {patientResults.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-4">
+                  Loading patients...
+                </p>
+              ) : (
+                patientResults.map((entry) => {
+                  const name = entry.resource.name?.[0];
+                  return (
+                    <button
+                      key={entry.resource.id}
+                      onClick={() => void linkPatient(entry.resource.id)}
+                      className="w-full rounded-lg border border-slate-200 p-3 text-left transition hover:bg-slate-50"
+                      type="button"
+                    >
+                      {name?.given?.join(" ")} {name?.family}
+                    </button>
+                  );
+                })
+              )}
             </div>
 
             <button
-              onClick={() => setShowLinkModal(false)}
+              onClick={() => {
+                setShowLinkModal(false);
+                setPatientResults([]);
+              }}
               className="mt-4 w-full text-slate-500"
               type="button"
             >

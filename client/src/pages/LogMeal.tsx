@@ -15,17 +15,26 @@ import {
   type DailyNutritionSummary,
   type MealLog,
 } from "../lib/meal-log";
+import api from "../lib/api";
 
-const CALORIE_GOAL = 2000;
+type UserData = {
+  calorieGoal: number;
+};
 
 export default function LogMeal() {
-  const [selectedDate, setSelectedDate] = useState(() => toLocalDateKey(new Date()));
+    const [user, setUser] = useState<UserData | null>(null);
+    const [selectedDate, setSelectedDate] = useState(() =>
+      toLocalDateKey(new Date()),
+    );
   const [mealLogs, setMealLogs] = useState<MealLog[]>([]);
   const [dailySummary, setDailySummary] = useState<DailyNutritionSummary>(() =>
     createEmptySummary(toLocalDateKey(new Date())),
   );
   const [isLoading, setIsLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
+  useEffect(() => {
+    api.get<UserData>("/me").then((r) => setUser(r.data));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,10 +83,12 @@ export default function LogMeal() {
     setDailySummary(summary);
   };
 
+  const calorieGoal = user?.calorieGoal || 2000;
   const calorieProgress = Math.min(
     100,
-    Math.round((dailySummary.totals.calories / CALORIE_GOAL) * 100),
+    Math.round((dailySummary.totals.calories / calorieGoal) * 100),
   );
+
   const macroPercentages = calculateMacroPercentages(dailySummary.totals);
 
   return (
@@ -104,7 +115,8 @@ export default function LogMeal() {
               Log Meal
             </h1>
             <p className="mt-0.5 text-sm text-slate-500">
-              Search foods, choose servings, and keep the dashboard Quick Log for fast entry.
+              Search foods, choose servings, and keep the dashboard Quick Log
+              for fast entry.
             </p>
           </div>
 
@@ -122,7 +134,10 @@ export default function LogMeal() {
         </div>
 
         <div className="grid gap-2.5 xl:grid-cols-[1.2fr,0.8fr]">
-          <MealLogComposer selectedDate={selectedDate} onMealCreated={reloadSelectedDate} />
+          <MealLogComposer
+            selectedDate={selectedDate}
+            onMealCreated={reloadSelectedDate}
+          />
 
           <div className="space-y-2.5">
             <section className="rounded-2xl border border-cyan-100 bg-gradient-to-br from-white via-[#faffff] to-cyan-50 p-3.5 shadow-sm shadow-cyan-100/70">
@@ -139,7 +154,8 @@ export default function LogMeal() {
                 <div className="flex items-center justify-between text-sm font-semibold text-slate-800">
                   <span>Calories</span>
                   <span>
-                    {roundValue(dailySummary.totals.calories)} / {CALORIE_GOAL} kcal
+                    {roundValue(dailySummary.totals.calories)} / {calorieGoal}{" "}
+                    kcal
                   </span>
                 </div>
                 <div className="mt-2 h-2.5 rounded-full bg-sky-100">
@@ -173,7 +189,9 @@ export default function LogMeal() {
                     className="rounded-lg border border-white/60 bg-white/80 px-3 py-2 shadow-sm"
                   >
                     <p className="text-xs text-slate-500">{item.label}</p>
-                    <p className={`mt-0.5 text-base font-semibold ${item.accent}`}>
+                    <p
+                      className={`mt-0.5 text-base font-semibold ${item.accent}`}
+                    >
                       {item.value}
                     </p>
                   </div>
@@ -208,7 +226,9 @@ export default function LogMeal() {
                     key={macro.label}
                     className="grid items-center gap-2.5 sm:grid-cols-[72px,1fr,44px]"
                   >
-                    <p className="text-sm font-semibold text-slate-800">{macro.label}</p>
+                    <p className="text-sm font-semibold text-slate-800">
+                      {macro.label}
+                    </p>
                     <div className="h-3.5 rounded-md bg-sky-100">
                       <div
                         className={`h-3.5 rounded-md ${macro.color} transition-all`}
