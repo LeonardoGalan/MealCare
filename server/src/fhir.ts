@@ -8,8 +8,6 @@ import {
   buildFoodsToAvoid,
   isDietRelevant,
 } from "./lib/fhir-context";
-import { buildPatientSearchPath } from "./lib/fhir-search";
-
 
 type ConditionBundle = {
   entry?: Array<{
@@ -45,41 +43,27 @@ async function fetchFhirJson<T>(path: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-router.get("/search", async (c) => {
-  const query = c.req.query("q") || "";
+router.get("/patients", async (c) => {
+  const cleanName = (name: string) => name.replace(/\d+/g, "").trim();
 
   try {
-    const path = buildPatientSearchPath(query);
-    if (path.endsWith("_count=0")) {
-      return c.json([]);
-    }
-    const data = await fetchFhirJson<{ entry?: unknown[] }>(path);
-    return c.json(data.entry || []);
-  } catch {
-    try {
-      const patients = await prisma.fhirPatient.findMany({
-        where: {
-          OR: [
-            { firstName: { contains: query, mode: "insensitive" } },
-            { lastName: { contains: query, mode: "insensitive" } },
-          ],
-        },
-      });
+    const patients = await prisma.fhirPatient.findMany();
 
-      return c.json(
-        patients.map((p) => ({
-          resource: {
-            id: p.fhirId,
-            name: [{ given: [p.firstName], family: p.lastName }],
-            birthDate: p.birthDate,
-            gender: p.gender,
-          },
-        })),
-      );
-    } catch (dbErr) {
-      console.error("Database fallback failed:", dbErr);
-      return c.json({ error: "Patient search unavailable" }, 500);
-    }
+    return c.json(
+      patients.map((p) => ({
+        resource: {
+          id: p.fhirId,
+          name: [
+            { given: [cleanName(p.firstName)], family: cleanName(p.lastName) },
+          ],
+          birthDate: p.birthDate,
+          gender: p.gender,
+        },
+      })),
+    );
+  } catch (err) {
+    console.error("Failed to fetch patients:", err);
+    return c.json({ error: "Unable to load patients" }, 500);
   }
 });
 

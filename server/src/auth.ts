@@ -60,7 +60,8 @@ router.post('/login', async (c) => {
 
 router.put("/profile", authMiddleware, async (c) => {
   const userId = c.get("userId");
-  const { firstName, lastName, email } = await c.req.json();
+  const { firstName, lastName, email, weightLbs, heightIn } =
+    await c.req.json();
 
   try {
     const user = await prisma.user.update({
@@ -69,6 +70,8 @@ router.put("/profile", authMiddleware, async (c) => {
         ...(firstName && { firstName }),
         ...(lastName && { lastName }),
         ...(email && { email }),
+        ...(weightLbs !== undefined && { weightLbs: Number(weightLbs) }),
+        ...(heightIn !== undefined && { heightIn: Number(heightIn) }),
       },
       select: {
         id: true,
@@ -76,6 +79,8 @@ router.put("/profile", authMiddleware, async (c) => {
         firstName: true,
         lastName: true,
         fhirPatientId: true,
+        weightLbs: true,
+        heightIn: true,
       },
     });
     return c.json(user);

@@ -5,6 +5,7 @@ import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import LogMeal from './pages/LogMeal';
 import Layout from "./components/Layout";
+import MealPlan from "./pages/MealPlan";
 import MealsToAvoid from "./pages/MealsToAvoid";
 import ProfileSettings from "./pages/ProfileSettings";
 
@@ -58,6 +59,7 @@ function App() {
           }
         >
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/meal-plan" element={<MealPlan />} />
           <Route path="/log-meal" element={<LogMeal />} />
           <Route path="/meals-to-avoid" element={<MealsToAvoid />} />
           <Route path="/profile" element={<ProfileSettings />} />
