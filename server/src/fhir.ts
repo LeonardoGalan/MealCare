@@ -210,7 +210,6 @@ router.get("/context", authMiddleware, async (c) => {
   }
 
   try {
-    // Using local fhir server data first
     const [patient, conditionBundle, allergyBundle] = await Promise.all([
       fetchFhirJson(`/Patient/${user.fhirPatientId}`),
       fetchFhirJson<{
@@ -251,8 +250,16 @@ router.get("/context", authMiddleware, async (c) => {
       .filter(isDietRelevant);
     const allergyNames = cachedAllergies.map((a) => a.substance);
 
+    const fhirPatient = await prisma.fhirPatient.findUnique({
+      where: { fhirId: user.fhirPatientId },
+    });
+
     return c.json({
-      patient: { id: user.fhirPatientId },
+      patient: {
+        id: user.fhirPatientId,
+        birthDate: fhirPatient?.birthDate || null,
+        gender: fhirPatient?.gender || null,
+      },
       conditions: conditionNames,
       allergies: allergyNames,
       providerSuggestions: buildProviderSuggestions(

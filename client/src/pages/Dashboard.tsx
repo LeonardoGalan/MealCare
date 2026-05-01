@@ -111,14 +111,19 @@ export default function Dashboard() {
     createEmptyFhirContext(),
   );
 
-  const [selectedDate, setSelectedDate] = useState(() => toLocalDateKey(new Date()));
+  const [selectedDate, setSelectedDate] = useState(() =>
+    toLocalDateKey(new Date()),
+  );
   const [showLinkModal, setShowLinkModal] = useState(false);
-  const [patientResults, setPatientResults] = useState<PatientSearchEntry[]>([]);
+  const [patientResults, setPatientResults] = useState<PatientSearchEntry[]>(
+    [],
+  );
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
   const [summaryView, setSummaryView] = useState<SummaryView>("today");
   const [trendDays, setTrendDays] = useState<7 | 30>(7);
-  const [progressSummary, setProgressSummary] = useState<NutritionProgressSummary | null>(null);
+  const [progressSummary, setProgressSummary] =
+    useState<NutritionProgressSummary | null>(null);
   const [isLoadingProgress, setIsLoadingProgress] = useState(false);
   const [progressError, setProgressError] = useState<string | null>(null);
   const [isUtilityPanelOpen, setIsUtilityPanelOpen] = useState(false);
@@ -239,10 +244,10 @@ export default function Dashboard() {
     setDailySummary(summary);
   };
 
-  const reloadFhirContext = async () => {
-    const response = await api.get<FhirContext>("/fhir/context");
-    setFhirContext(response.data);
-  };
+  // const reloadFhirContext = async () => {
+  //   const response = await api.get<FhirContext>("/fhir/context");
+  //   setFhirContext(response.data);
+  // };
 
   const loadPatients = async () => {
     try {
@@ -255,7 +260,12 @@ export default function Dashboard() {
 
   const linkPatient = async (id: string) => {
     await api.post("/fhir/link", { fhirPatientId: id });
-    await reloadFhirContext();
+    const [userRes, contextRes] = await Promise.all([
+      api.get<UserData>("/me"),
+      api.get<FhirContext>("/fhir/context"),
+    ]);
+    setUser(userRes.data);
+    setFhirContext(contextRes.data);
     setShowLinkModal(false);
     setPatientResults([]);
   };
@@ -279,15 +289,17 @@ export default function Dashboard() {
   const patientName = formatPatientName(fhirContext.patient, user);
   const trendBuckets = progressSummary?.buckets ?? [];
 
+  if (!user) {
+    return (
+      <div className="h-full flex items-center justify-center bg-[radial-gradient(circle_at_top,#f9fcff_0%,#eef5fb_55%,#e7eff8_100%)]">
+        <p className="text-slate-500">Loading dashboard...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="h-full bg-[radial-gradient(circle_at_top,#f9fcff_0%,#eef5fb_55%,#e7eff8_100%)]">
       <div className="mx-auto max-w-[1500px] px-3 py-3 sm:px-4 sm:py-4 xl:px-5">
-        {dashboardError && (
-          <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
-            {dashboardError}
-          </div>
-        )}
-
         <div className="grid gap-3 xl:grid-cols-[0.82fr,1.38fr]">
           <section className="rounded-xl border border-sky-100 bg-gradient-to-br from-white via-[#fbfdff] to-sky-50 p-4 shadow-sm shadow-sky-100/60">
             <h2 className="text-[1.45rem] font-bold leading-tight text-slate-800 sm:text-[1.8rem]">
@@ -326,36 +338,99 @@ export default function Dashboard() {
                 <p className="text-xs font-semibold text-amber-800 mb-2">
                   Enter your measurements for personalized calorie goals
                 </p>
-                <div className="flex gap-2">
-                  <input
-                    type="number"
-                    placeholder="Weight (lbs)"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                    onBlur={async (e) => {
-                      const val = parseFloat(e.target.value);
-                      if (val > 0) {
-                        const res = await api.put<UserData>("/auth/profile", {
-                          weightLbs: val,
-                        });
-                        setUser(res.data);
-                      }
-                    }}
-                  />
-                  <input
-                    type="number"
-                    placeholder="Height (in)"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
-                    onBlur={async (e) => {
-                      const val = parseFloat(e.target.value);
-                      if (val > 0) {
-                        const res = await api.put<UserData>("/auth/profile", {
-                          heightIn: val,
-                        });
-                        setUser(res.data);
-                      }
-                    }}
-                  />
-                </div>
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    const form = e.target as HTMLFormElement;
+                    const weight = parseFloat(
+                      (form.elements.namedItem("weight") as HTMLInputElement)
+                        .value,
+                    );
+                    const feet = parseFloat(
+                      (form.elements.namedItem("feet") as HTMLInputElement)
+                        .value,
+                    );
+                    const inches = parseFloat(
+                      (form.elements.namedItem("inches") as HTMLInputElement)
+                        .value || "0",
+                    );
+
+                    if (weight < 50 || weight > 700) {
+                      setDashboardError(
+                        "Weight must be between 50 and 700 lbs.",
+                      );
+                      return;
+                    }
+                    if (feet < 3 || feet > 8) {
+                      setDashboardError("Height must be between 3 and 8 feet.");
+                      return;
+                    }
+                    if (inches < 0 || inches > 11) {
+                      setDashboardError("Inches must be between 0 and 11.");
+                      return;
+                    }
+
+                    setDashboardError(null);
+                    await api.put("/auth/profile", {
+                      weightLbs: weight,
+                      heightIn: feet * 12 + inches,
+                    });
+                    const res = await api.get<UserData>("/me");
+                    setUser(res.data);
+                  }}
+                >
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      name="weight"
+                      placeholder="Weight (lbs)"
+                      required
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                      onChange={(e) => {
+                        const num = Number(e.target.value);
+                        if (num < 0 || num > 700) {
+                          e.target.value = e.target.value.slice(0, -1);
+                        }
+                      }}
+                    />
+                    <input
+                      type="number"
+                      name="feet"
+                      placeholder="Feet"
+                      required
+                      className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                      onChange={(e) => {
+                        const num = Number(e.target.value);
+                        if (num < 0 || num > 8) {
+                          e.target.value = e.target.value.slice(0, -1);
+                        }
+                      }}
+                    />
+                    <input
+                      type="number"
+                      name="inches"
+                      placeholder="In"
+                      className="w-20 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                      onChange={(e) => {
+                        const num = Number(e.target.value);
+                        if (num < 0 || num > 11) {
+                          e.target.value = e.target.value.slice(0, -1);
+                        }
+                      }}
+                    />
+                  </div>
+                  {dashboardError && (
+                    <p className="mt-2 text-xs text-red-500">
+                      {dashboardError}
+                    </p>
+                  )}
+                  <button
+                    type="submit"
+                    className="mt-3 rounded-lg bg-amber-600 px-4 py-2 text-xs font-medium text-white hover:bg-amber-700 transition"
+                  >
+                    Save Measurements
+                  </button>
+                </form>
               </div>
             )}
 
@@ -370,6 +445,20 @@ export default function Dashboard() {
                   {Math.floor(user.heightIn / 12)}'
                   {Math.round(user.heightIn % 12)}"
                 </p>
+                {fhirContext.patient?.gender && (
+                  <p>
+                    <span className="font-semibold text-slate-800">Sex:</span>{" "}
+                    <span className="capitalize">
+                      {fhirContext.patient.gender}
+                    </span>
+                  </p>
+                )}
+                {fhirContext.patient?.birthDate && (
+                  <p>
+                    <span className="font-semibold text-slate-800">DOB:</span>{" "}
+                    {fhirContext.patient.birthDate}
+                  </p>
+                )}
                 <p>
                   <span className="font-semibold text-slate-800">
                     Daily Calorie Goal:
@@ -391,20 +480,8 @@ export default function Dashboard() {
                 <Link2 className="h-4 w-4" />
                 {fhirContext.patient
                   ? "Relink Patient Data"
-                  : "Link FHIR Patient Data"}
+                  : "Link Your FHIR Patient Data"}
               </button>
-
-              {fhirContext.patient?.birthDate && (
-                <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-medium text-[#205278]">
-                  DOB {fhirContext.patient.birthDate}
-                </span>
-              )}
-
-              {fhirContext.patient?.gender && (
-                <span className="rounded-full bg-teal-100 px-3 py-1 text-xs font-medium capitalize text-teal-700">
-                  {fhirContext.patient.gender}
-                </span>
-              )}
             </div>
           </section>
 

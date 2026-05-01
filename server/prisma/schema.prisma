@@ -13,10 +13,11 @@ model User {
   passwordHash  String   @map("password_hash")
   firstName     String   @map("first_name")
   lastName      String   @map("last_name")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
   weightLbs     Float?   @map("weight_lbs")
   heightIn      Float?   @map("height_in")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  
 
   // linking a fhir patient's record
   fhirPatientId String?  @unique @map("fhir_patient_id")
