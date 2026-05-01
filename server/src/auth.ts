@@ -70,8 +70,12 @@ router.put("/profile", authMiddleware, async (c) => {
         ...(firstName && { firstName }),
         ...(lastName && { lastName }),
         ...(email && { email }),
-        ...(weightLbs !== undefined && { weightLbs: Number(weightLbs) }),
-        ...(heightIn !== undefined && { heightIn: Number(heightIn) }),
+        ...(weightLbs !== undefined && {
+          weightLbs: weightLbs ? Number(weightLbs) : null,
+        }),
+        ...(heightIn !== undefined && {
+          heightIn: heightIn ? Number(heightIn) : null,
+        }),
       },
       select: {
         id: true,

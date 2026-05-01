@@ -23,9 +23,8 @@ router.post("/generate", authMiddleware, async (c) => {
     prisma.userAllergy.findMany({ where: { userId } }),
   ]);
 
-  // Try to get age and gender from cached FHIR patient
   let age: number | null = null;
-    let gender: string | null = null;
+  let gender: string | null = null;
 
   if (user?.fhirPatientId) {
     const fhirPatient = await prisma.fhirPatient.findUnique({
@@ -40,7 +39,7 @@ router.post("/generate", authMiddleware, async (c) => {
       }
     }
   }
-      // Calculate calorie target using Mifflin-St Jeor
+
   let calorieTarget = 2000;
 
   if (user?.weightLbs && user?.heightIn && age && gender) {
@@ -74,13 +73,12 @@ router.post("/generate", authMiddleware, async (c) => {
     ? `The patient has the following allergies: ${allergyNames.join(", ")}. These foods must be completely avoided.`
     : "The patient has no known allergies.";
 
-const bkfast = Math.round(calorieTarget * 0.25);
+  const bkfast = Math.round(calorieTarget * 0.25);
   const lunch = Math.round(calorieTarget * 0.30);
   const dinner = Math.round(calorieTarget * 0.30);
-    const snack = Math.round(calorieTarget * 0.15);
-    const prompt = `You are a clinical dietitian. Generate a 7-day meal plan for a patient based on their health profile.
+  const snack = Math.round(calorieTarget * 0.15);
 
-
+  const prompt = `You are a clinical dietitian. Generate a 7-day meal plan for a patient based on their health profile.
 
 Patient profile: ${profileContext || "No biometric data available."}
 ${conditionContext}
@@ -124,7 +122,6 @@ Respond ONLY with valid JSON in this exact format, no markdown, no explanation:
   "dailyCalorieTarget": ${calorieTarget},
   "summary": "Brief explanation of why this meal plan suits the patient's conditions"
 }`;
-
 
   try {
     const groq = new Groq({ apiKey });

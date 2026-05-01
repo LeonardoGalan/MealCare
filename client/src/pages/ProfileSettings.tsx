@@ -14,12 +14,16 @@ type UserData = {
 
 export default function ProfileSettings() {
   const [user, setUser] = useState<UserData | null>(null);
-  const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
+    
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [weightLbs, setWeightLbs] = useState<string>("");
-  const [heightIn, setHeightIn] = useState<string>("");
+    const [heightIn, setHeightIn] = useState<string>("");
+    const [weightError, setWeightError] = useState<string | null>(null);
+    const [heightError, setHeightError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [profileMsg, setProfileMsg] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -51,29 +55,57 @@ export default function ProfileSettings() {
     load();
   }, []);
 
-  const handleUpdateProfile = async () => {
-    setProfileMsg(null);
-    setProfileError(null);
+const handleUpdateProfile = async () => {
+  if (isSaving) return;
+  setIsSaving(true);
+  setProfileError(null);
+  setWeightError(null);
+  setHeightError(null);
 
-    try {
-      const res = await api.put<UserData>("/auth/profile", {
-        firstName,
-        lastName,
-        email,
-        weightLbs: weightLbs ? parseFloat(weightLbs) : null,
-        heightIn: heightIn ? parseFloat(heightIn) : null,
-      });
-      setUser(res.data);
-      setProfileMsg("Profile updated successfully.");
-    } catch (err: unknown) {
-      const message =
-        err && typeof err === "object" && "response" in err
-          ? (err as { response?: { data?: { error?: string } } }).response?.data
-              ?.error
-          : null;
-      setProfileError(message || "Failed to update profile.");
+  const weight = weightLbs ? parseFloat(weightLbs) : null;
+  const height = heightIn ? parseFloat(heightIn) : null;
+  let hasError = false;
+
+  if (weight !== null && (weight < 50 || weight > 700)) {
+    setWeightError("Must be between 50 and 700 lbs");
+    hasError = true;
+  }
+
+  if (height !== null) {
+    const feet = Math.floor(height / 12);
+    if (feet < 3 || feet > 8) {
+      setHeightError("Must be between 3 and 8 feet");
+      hasError = true;
     }
-  };
+  }
+
+  if (hasError) {
+    setProfileMsg(null);
+    setIsSaving(false);
+    return;
+  }
+
+  try {
+    await api.put("/auth/profile", {
+      firstName,
+      lastName,
+      email,
+      weightLbs: weight,
+      heightIn: height,
+    });
+    setProfileMsg("Profile updated successfully.");
+  } catch (err: unknown) {
+    setProfileMsg(null);
+    const message =
+      err && typeof err === "object" && "response" in err
+        ? (err as { response?: { data?: { error?: string } } }).response?.data
+            ?.error
+        : null;
+    setProfileError(message || "Failed to update profile.");
+  } finally {
+    setIsSaving(false);
+  }
+};
 
   const handleChangePassword = async () => {
     setPasswordMsg(null);
@@ -178,10 +210,25 @@ export default function ProfileSettings() {
               <input
                 type="number"
                 value={weightLbs}
-                onChange={(e) => setWeightLbs(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === "") {
+                    setWeightLbs("");
+                    setWeightError(null);
+                    return;
+                  }
+                  const num = Number(val);
+                  if (num < 0 || num > 700) return;
+                  // Prevent leading zeros
+                  setWeightLbs(num.toString());
+                  setWeightError(null);
+                }}
                 placeholder="e.g. 170"
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                className={`mt-1 w-full rounded-lg border px-3 py-2 text-sm text-slate-700 ${weightError ? "border-red-300" : "border-slate-200"}`}
               />
+              {weightError && (
+                <p className="mt-1 text-xs text-red-500">{weightError}</p>
+              )}
             </label>
             <label className="text-sm text-slate-600">
               Height
@@ -197,16 +244,18 @@ export default function ProfileSettings() {
                     onChange={(e) => {
                       const val = e.target.value;
                       if (val === "") {
-                        setHeightIn("0");
+                        setHeightIn("");
+                        setHeightError(null);
                         return;
                       }
                       const feet = Number(val);
                       if (feet < 0 || feet > 8) return;
                       const inches = Number(heightIn) % 12;
                       setHeightIn((feet * 12 + inches).toString());
+                      setHeightError(null);
                     }}
                     placeholder="ft"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                    className={`w-full rounded-lg border px-3 py-2 text-sm text-slate-700 ${heightError ? "border-red-300" : "border-slate-200"}`}
                   />
                   <span className="absolute right-3 top-2 text-sm text-slate-400">
                     ft
@@ -240,15 +289,19 @@ export default function ProfileSettings() {
                   </span>
                 </div>
               </div>
+              {heightError && (
+                <p className="mt-1 text-xs text-red-500">{heightError}</p>
+              )}
             </label>
           </div>
 
           <button
             onClick={handleUpdateProfile}
-            className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 transition"
+            disabled={isSaving}
+            className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Save className="w-4 h-4" />
-            Save Changes
+            {isSaving ? "Saving..." : "Save Changes"}
           </button>
         </div>
       </div>
