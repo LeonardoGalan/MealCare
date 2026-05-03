@@ -129,6 +129,8 @@ export default function Dashboard() {
   const [isUtilityPanelOpen, setIsUtilityPanelOpen] = useState(false);
   const [utilityTab, setUtilityTab] = useState<UtilityTab>("log");
   const [macroView, setMacroView] = useState<"goals" | "breakdown">("goals");
+  const [medAlerts, setMedAlerts] = useState<string[]>([]);
+  const [unsafeFoods, setUnsafeFoods] = useState<{ food: string; med: string }[]>([]);
 
   const calorieGoal = user?.calorieGoal || 2000;
   useEffect(() => {
@@ -143,7 +145,15 @@ export default function Dashboard() {
 
         if (!cancelled) {
           setUser(userResponse.data);
-          setFhirContext(contextResponse.data);
+          setFhirContext({
+            ...createEmptyFhirContext(),
+            ...contextResponse.data,
+            providerSuggestions:
+              contextResponse.data.providerSuggestions &&
+              contextResponse.data.providerSuggestions.length > 0
+                ? contextResponse.data.providerSuggestions
+                : [],
+          });
         }
       } catch {
         if (!cancelled) {
@@ -158,6 +168,40 @@ export default function Dashboard() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const checkAlerts = async () => {
+      try {
+        const foods = mealLogs.flatMap((meal) =>
+          meal.items.map((item) =>
+            item.foodItem?.name?.toLowerCase() || ""
+          )
+        );
+  
+        const res = await api.post("/fhir/medication-alerts", { foods });
+  
+        setMedAlerts(res.data.alerts || []);
+  
+        const parsed = (res.data.alerts || []).map((alert: string) => {
+          const parts = alert.split(" may interact with ");
+          return {
+            food: parts[0]?.toLowerCase() || "",
+            med: parts[1] || "",
+          };
+        });
+  
+        setUnsafeFoods(parsed);
+  
+      } catch {
+        setMedAlerts([]);
+        setUnsafeFoods([]);
+      }
+    };
+  
+    if (mealLogs.length > 0) {
+      checkAlerts();
+    }
+  }, [mealLogs]);
 
   useEffect(() => {
     let cancelled = false;
@@ -643,69 +687,140 @@ export default function Dashboard() {
         </div>
 
         <section className="mt-3 rounded-xl border border-sky-100 bg-white p-4 shadow-sm shadow-sky-100/60">
-          <h2 className="text-[1.45rem] font-bold leading-tight text-slate-800 sm:text-[1.8rem]">
-            Today&apos;s Meals
-          </h2>
-          <div className="mt-4 space-y-2.5 md:hidden">
-            {MEAL_TYPES.map((currentMealType) => (
-              <div
-                key={currentMealType}
-                className="rounded-lg border border-sky-100 bg-gradient-to-r from-white to-sky-50/40 px-3.5 py-3"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-[#204f74]">
-                      {formatMealTypeLabel(currentMealType)}
-                    </p>
-                    <p className="mt-1 text-sm text-slate-700">
-                      {buildMealDescription(groupedMeals[currentMealType])}
-                    </p>
-                  </div>
-                  <p className="whitespace-nowrap text-sm font-semibold text-emerald-500">
-                    {roundValue(
-                      dailySummary.byMealType[currentMealType].calories,
-                    )}{" "}
-                    kcal
-                  </p>
-                </div>
-              </div>
-            ))}
+  <h2 className="text-[1.45rem] font-bold leading-tight text-slate-800 sm:text-[1.8rem]">
+    Today&apos;s Meals
+  </h2>
+
+  {/* MOBILE */}
+  <div className="mt-4 space-y-2.5 md:hidden">
+    {MEAL_TYPES.map((currentMealType) => (
+      <div
+        key={currentMealType}
+        className="rounded-lg border border-sky-100 bg-gradient-to-r from-white to-sky-50/40 px-3.5 py-3"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-[#204f74]">
+              {formatMealTypeLabel(currentMealType)}
+            </p>
+            <p className="mt-1 text-sm text-slate-700">
+              {(() => {
+                const desc = buildMealDescription(
+                  groupedMeals[currentMealType]
+                );
+
+                const mealItems = groupedMeals[currentMealType] || [];
+
+                const unsafe = mealItems.some((meal) =>
+                  meal.items.some((item) =>
+                    item.foodItem &&
+                    unsafeFoods.some((food) =>
+                      item.foodItem.name.toLowerCase().includes(food)
+                    )
+                  )
+                );
+
+                return (
+                  <>
+                    {desc}
+                    {(() => {
+                      const match = unsafeFoods.find((u) =>
+                        desc.toLowerCase().includes(u.food)
+                      );
+                
+                      return match ? (
+                        <span className="text-red-500 ml-2 text-xs">
+                          ⚠ ({match.med} interaction)
+                        </span>
+                      ) : null;
+                    })()}
+                  </>
+                );
+              })()}
+            </p>
           </div>
-          <div className="mt-4 hidden overflow-x-auto rounded-lg border border-sky-100 md:block">
-            <table className="w-full min-w-[38rem] border-collapse text-left text-sm">
-              <thead className="bg-gradient-to-r from-sky-50 to-cyan-50 text-slate-700">
-                <tr>
-                  <th className="px-4 py-2.5 font-semibold">Meals</th>
-                  <th className="px-4 py-2.5 font-semibold">Description</th>
-                  <th className="px-4 py-2.5 text-right font-semibold">
-                    Calories
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {MEAL_TYPES.map((currentMealType) => (
-                  <tr
-                    key={currentMealType}
-                    className="border-t border-sky-50 odd:bg-white even:bg-sky-50/30"
-                  >
-                    <td className="px-4 py-3 font-semibold text-[#204f74]">
-                      {formatMealTypeLabel(currentMealType)}
-                    </td>
-                    <td className="px-4 py-3 text-slate-700">
-                      {buildMealDescription(groupedMeals[currentMealType])}
-                    </td>
-                    <td className="px-4 py-3 text-right font-medium text-emerald-500">
-                      {roundValue(
-                        dailySummary.byMealType[currentMealType].calories,
-                      )}{" "}
-                      kcal
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+
+          <p className="whitespace-nowrap text-sm font-semibold text-emerald-500">
+            {roundValue(
+              dailySummary.byMealType[currentMealType].calories
+            )}{" "}
+            kcal
+          </p>
+        </div>
+      </div>
+    ))}
+  </div>
+
+  {/* DESKTOP */}
+  <div className="mt-4 hidden overflow-x-auto rounded-lg border border-sky-100 md:block">
+    <table className="w-full min-w-[38rem] border-collapse text-left text-sm">
+      <thead className="bg-gradient-to-r from-sky-50 to-cyan-50 text-slate-700">
+        <tr>
+          <th className="px-4 py-2.5 font-semibold">Meals</th>
+          <th className="px-4 py-2.5 font-semibold">Description</th>
+          <th className="px-4 py-2.5 text-right font-semibold">
+            Calories
+          </th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {MEAL_TYPES.map((currentMealType) => (
+          <tr
+            key={currentMealType}
+            className="border-t border-sky-50 odd:bg-white even:bg-sky-50/30"
+          >
+            <td className="px-4 py-3 font-semibold text-[#204f74]">
+              {formatMealTypeLabel(currentMealType)}
+            </td>
+            <td className="px-4 py-3 text-slate-700">
+              {(() => {
+                const desc = buildMealDescription(
+                  groupedMeals[currentMealType]
+                );
+
+                const mealItems = groupedMeals[currentMealType] || [];
+
+                const unsafe = mealItems.some((meal) =>
+                  meal.items.some((item) =>
+                    item.foodItem &&
+                    unsafeFoods.some((food) =>
+                      item.foodItem.name.toLowerCase().includes(food)
+                    )
+                  )
+                );
+
+                return (
+                  <>
+                    {desc}
+                    {(() => {
+                      const match = unsafeFoods.find((u) =>
+                        desc.toLowerCase().includes(u.food)
+                      );
+                
+                      return match ? (
+                        <span className="text-red-500 ml-2 text-xs">
+                          ⚠ ({match.med} interaction)
+                        </span>
+                      ) : null;
+                    })()}
+                  </>
+                );
+              })()}
+            </td>
+
+            <td className="px-4 py-3 text-right font-medium text-emerald-500">
+              {roundValue(
+                dailySummary.byMealType[currentMealType].calories
+              )}{" "}
+              kcal
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+</section>
 
         <div className="mt-3 grid gap-3 xl:grid-cols-[1fr,0.95fr]">
           <section className="rounded-xl border border-sky-100 bg-gradient-to-br from-white via-[#fafdff] to-sky-50 p-4 shadow-sm shadow-sky-100/60">
@@ -865,17 +980,20 @@ export default function Dashboard() {
             )}
           </section>
 
-          <section className="rounded-xl border border-amber-200 bg-gradient-to-br from-[#fffdf8] to-[#fff4df] p-4 shadow-sm shadow-amber-100/70">
-            <h2 className="text-[1.45rem] font-bold leading-tight text-slate-800 sm:text-[1.8rem]">
-              Suggestion From Your Provider
-            </h2>
+          {fhirContext.providerSuggestions &&
+          fhirContext.providerSuggestions.length > 0 && (
+            <section className="rounded-xl border border-amber-200 bg-gradient-to-br from-[#fffdf8] to-[#fff4df] p-4 shadow-sm shadow-amber-100/70">
+              <h2 className="text-[1.45rem] font-bold leading-tight text-slate-800 sm:text-[1.8rem]">
+                Suggestion From Your Provider
+              </h2>
 
-            <div className="mt-4 space-y-3 text-sm leading-6 text-slate-700">
-              {fhirContext.providerSuggestions.map((suggestion) => (
-                <p key={suggestion}>{suggestion}</p>
-              ))}
-            </div>
-          </section>
+              <div className="mt-4 space-y-3 text-sm leading-6 text-slate-700">
+                {fhirContext.providerSuggestions.map((suggestion) => (
+                  <p key={suggestion}>{suggestion}</p>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       </div>
 

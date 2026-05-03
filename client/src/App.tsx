@@ -8,6 +8,7 @@ import Layout from "./components/Layout";
 import MealPlan from "./pages/MealPlan";
 import MealsToAvoid from "./pages/MealsToAvoid";
 import ProfileSettings from "./pages/ProfileSettings";
+import MedicationSafety from "./pages/MedicationSafety";
 
 function App() {
   // useState within useEffect creates unneeded re-renders, better to check boolean val at start of render
@@ -48,7 +49,6 @@ function App() {
             )
           }
         />
-
         <Route
           element={
             isAuthenticated ? (
@@ -58,6 +58,7 @@ function App() {
             )
           }
         >
+          <Route path="/medication" element={<MedicationSafety />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/meal-plan" element={<MealPlan />} />
           <Route path="/log-meal" element={<LogMeal />} />

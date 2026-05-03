@@ -75,27 +75,38 @@ export default function MealLogComposer({
   const handleSave = async () => {
     setFeedback(null);
     setError(null);
-
+  
     if (!selectedFood) {
       setError("Choose a food result before logging a meal.");
       return;
     }
-
+  
     if (!Number.isFinite(servings) || servings <= 0) {
       setError("Servings must be greater than 0.");
       return;
     }
-
+  
     setIsSaving(true);
-
+  
     try {
+      const isSafe = onMealCreated
+        ? await onMealCreated([selectedFood.name])
+        : true;
+  
+      if (!isSafe) {
+        setError("⚠ This food may interact with your medication.");
+        setIsSaving(false);
+        return;
+      }
+  
+      // only save if safe
       await createMealLog({
         selectedDate,
         selectedFood,
         mealType,
         servings,
       });
-      await onMealCreated?.();
+  
       setFeedback(`Logged ${selectedFood.name} for ${formatDateLabel(selectedDate)}.`);
       resetComposer();
       onAfterSave?.();

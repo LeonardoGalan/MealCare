@@ -6,6 +6,8 @@ import mealRouter from "./meal";
 import mealPlanRouter from "./meal-plan";
 import { authMiddleware } from "./middleware";
 import prisma from "./lib/prisma";
+import medicationRouter from "./medication";
+
 
 type Variables = {
   userId: string;
@@ -14,12 +16,20 @@ type Variables = {
 export function createApp() {
   const app = new Hono<{ Variables: Variables }>();
 
-  app.use("*", cors());
+  app.use(
+    "*",
+    cors({
+      origin: "http://localhost:5173",
+      allowHeaders: ["Content-Type", "Authorization"],
+      allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    })
+  );
 
   app.route("/auth", authRouter);
   app.route("/fhir", fhirRouter);
   app.route("/meal-logs", mealRouter);
   app.route("/meal-plan", mealPlanRouter);
+  app.route("/medication", medicationRouter);
 
 app.get("/me", authMiddleware, async (c) => {
   const userId = c.get("userId");

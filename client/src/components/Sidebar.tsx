@@ -12,6 +12,7 @@ const navItems = [
   { to: "/meal-plan", label: "Meal Plan", icon: CalendarDays },
   { to: "/log-meal", label: "Log Meal", icon: UtensilsCrossed },
   { to: "/meals-to-avoid", label: "Meals to Avoid", icon: Ban },
+  { to: "/medication", label: "Medication Safety", icon: Ban },
   { to: "/profile", label: "Profile Settings", icon: Settings },
 ];
 // following figma diagram, none of these have routes as of now and quickly adding these for the purpose of demo.
