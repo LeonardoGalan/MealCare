@@ -508,20 +508,28 @@ export default function Dashboard() {
               </div>
             )}
 
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <button
-                onClick={async () => {
-                  setShowLinkModal(true);
-                  await loadPatients();
-                }}
-                className="inline-flex items-center gap-2 rounded-lg border border-sky-200 bg-white px-3 py-2 text-xs font-medium text-[#205278] transition hover:bg-sky-50"
-                type="button"
-              >
-                <Link2 className="h-4 w-4" />
-                {fhirContext.patient
-                  ? "Relink Patient Data"
-                  : "Link Your FHIR Patient Data"}
-              </button>
+            <div className="mt-4 flex flex-col gap-1">
+              {fhirContext.patient && (
+                <p className="text-xs text-green-600 font-medium">
+                  Connected to FHIR patient
+                </p>
+              )}
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={async () => {
+                    setShowLinkModal(true);
+                    await loadPatients();
+                  }}
+                  className="inline-flex items-center gap-2 rounded-lg border border-sky-200 bg-white px-3 py-2 text-xs font-medium text-[#205278] transition hover:bg-sky-50"
+                  type="button"
+                >
+                  <Link2 className="h-4 w-4" />
+                  {fhirContext.patient
+                    ? "Relink Patient Data"
+                    : "Link Your FHIR Patient Data"}
+                </button>
+              </div>
             </div>
           </section>
 

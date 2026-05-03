@@ -284,9 +284,10 @@ router.get("/context", authMiddleware, async (c) => {
 
   if (!user?.fhirPatientId) {
     return c.json({
+      patient: null,
       conditions: [],
       allergies: [],
-      medications: [],
+      providerSuggestions: [],
     });
   }
 
@@ -295,18 +296,45 @@ router.get("/context", authMiddleware, async (c) => {
     const mock = mockFHIRData[user.fhirPatientId];
 
     return c.json({
+      patient: {
+        id: user.fhirPatientId,
+        name: [{ given: ["Demo"], family: "Patient" }],
+      },
       conditions: mock.conditions.map(c => c.display),
       allergies: mock.allergies.map(a => a.substance),
-      medications: mock.medications
+      providerSuggestions: buildProviderSuggestions(
+        mock.conditions.map(c => c.display),
+        mock.allergies.map(a => a.substance)
+      ),
     });
   }
 
   // fallback empty
   return c.json({
+    patient: null,
     conditions: [],
     allergies: [],
-    medications: [],
+    providerSuggestions: [],
   });
+});
+
+router.get("/patients", authMiddleware, async (c) => {
+  const userId = c.get("userId");
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { fhirPatientId: true },
+  });
+
+  // return mock patient list
+  return c.json([
+    {
+      resource: {
+        id: "demo-patient-1",
+        name: [{ given: ["Demo"], family: "Patient" }],
+      },
+    },
+  ]);
 });
 
 export default router;
