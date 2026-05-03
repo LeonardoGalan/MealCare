@@ -4,7 +4,6 @@ import { ArrowLeft } from "lucide-react";
 import MealHistoryList from "../components/MealHistoryList";
 import MealLogComposer from "../components/MealLogComposer";
 import {
-  calculateMacroPercentages,
   createEmptySummary,
   deleteMealLog,
   fetchDailySummary,

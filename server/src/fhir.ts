@@ -30,7 +30,14 @@ type AllergyBundle = {
   }>;
 };
 
-const mockFHIRData = {
+const mockFHIRData: Record<
+  string,
+  {
+    conditions: { fhirId: string; display: string; code: string }[];
+    allergies: { fhirId: string; substance: string }[];
+    medications: string[];
+  }
+> = {
   "demo-patient-1": {
     conditions: [
       { fhirId: "c1", display: "Diabetes", code: "diabetes" },

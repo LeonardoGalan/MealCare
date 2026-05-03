@@ -129,7 +129,6 @@ export default function Dashboard() {
   const [isUtilityPanelOpen, setIsUtilityPanelOpen] = useState(false);
   const [utilityTab, setUtilityTab] = useState<UtilityTab>("log");
   const [macroView, setMacroView] = useState<"goals" | "breakdown">("goals");
-  const [medAlerts, setMedAlerts] = useState<string[]>([]);
   const [unsafeFoods, setUnsafeFoods] = useState<{ food: string; med: string }[]>([]);
 
   const calorieGoal = user?.calorieGoal || 2000;
@@ -180,8 +179,6 @@ export default function Dashboard() {
   
         const res = await api.post("/fhir/medication-alerts", { foods });
   
-        setMedAlerts(res.data.alerts || []);
-  
         const parsed = (res.data.alerts || []).map((alert: string) => {
           const parts = alert.split(" may interact with ");
           return {
@@ -193,7 +190,6 @@ export default function Dashboard() {
         setUnsafeFoods(parsed);
   
       } catch {
-        setMedAlerts([]);
         setUnsafeFoods([]);
       }
     };

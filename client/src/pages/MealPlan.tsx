@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import {
   Utensils,
   RefreshCw,
-  AlertTriangle,
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
