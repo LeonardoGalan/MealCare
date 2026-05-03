@@ -30,169 +30,253 @@ type AllergyBundle = {
   }>;
 };
 
+const mockFHIRData: Record<
+  string,
+  {
+    conditions: { fhirId: string; display: string; code: string }[];
+    allergies: { fhirId: string; substance: string }[];
+    medications: string[];
+  }
+> = {
+  "demo-patient-1": {
+    conditions: [
+      { fhirId: "c1", display: "Diabetes", code: "diabetes" },
+      { fhirId: "c2", display: "Hypertension", code: "hypertension" },
+    ],
+    allergies: [
+      { fhirId: "a1", substance: "Peanuts" },
+      { fhirId: "a2", substance: "Shellfish" },
+    ],
+    medications: ["statin", "warfarin"]
+  }
+};
+
 const router = new Hono<{ Variables: { userId: string } }>();
 const FHIR_BASE_URL = "http://localhost:8080/fhir";
 
 async function fetchFhirJson<T>(path: string): Promise<T> {
   const response = await fetch(`${FHIR_BASE_URL}${path}`);
-
-  if (!response.ok) {
-    throw new Error(`FHIR request failed: ${response.status}`);
-  }
-
+  if (!response.ok) throw new Error(`FHIR request failed: ${response.status}`);
   return response.json() as Promise<T>;
 }
 
-router.get("/patients", async (c) => {
-  const cleanName = (name: string) => name.replace(/\d+/g, "").trim();
+/* ------------------ FOODS TO AVOID ------------------ */
+
+router.get("/foods-to-avoid", authMiddleware, async (c) => {
+  const userId = c.get("userId");
 
   try {
-    const patients = await prisma.fhirPatient.findMany();
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { fhirPatientId: true },
+    });
 
-    return c.json(
-      patients.map((p) => ({
-        resource: {
-          id: p.fhirId,
-          name: [
-            { given: [cleanName(p.firstName)], family: cleanName(p.lastName) },
-          ],
-          birthDate: p.birthDate,
-          gender: p.gender,
-        },
-      })),
-    );
+    if (!user?.fhirPatientId) {
+      return c.json({
+        foods: [],
+        conditions: [],
+        allergies: [],
+        message: "No FHIR patient linked"
+      });
+    }
+
+    /* ---------- USE MOCK FIRST (prevents FHIR spam) ---------- */
+
+    if (mockFHIRData[user.fhirPatientId]) {
+      const mock = mockFHIRData[user.fhirPatientId];
+
+      const conditionNames = mock.conditions.map(c => c.display);
+      const allergyNames = mock.allergies.map(a => a.substance);
+
+      const foods: {
+        food: string;
+        reason: string;
+        condition: string;
+      }[] = [];
+
+      conditionNames.forEach((condition) => {
+        const c = condition.toLowerCase();
+
+        if (c.includes("diabetes")) {
+          foods.push({
+            food: "Sugary drinks",
+            reason: "Can spike blood sugar",
+            condition
+          });
+        }
+
+        if (c.includes("hypertension")) {
+          foods.push({
+            food: "Salty processed foods",
+            reason: "Can increase blood pressure",
+            condition
+          });
+        }
+      });
+
+      allergyNames.forEach((allergy) => {
+        const a = allergy.toLowerCase();
+
+        if (a.includes("peanut")) {
+          foods.push({
+            food: "Peanuts",
+            reason: "Triggers peanut allergy",
+            condition: "Allergy"
+          });
+
+          foods.push({
+            food: "Peanut butter",
+            reason: "Triggers peanut allergy",
+            condition: "Allergy"
+          });
+
+          foods.push({
+            food: "Almonds",
+            reason: "Possible cross-nut allergy risk",
+            condition: "Allergy"
+          });
+        }
+
+        if (a.includes("shellfish")) {
+          foods.push({
+            food: "Shrimp",
+            reason: "Triggers shellfish allergy",
+            condition: "Allergy"
+          });
+        }
+      });
+
+      return c.json({
+        foods,
+        conditions: conditionNames,
+        allergies: allergyNames
+      });
+    }
+
+    /* ---------- FALLBACK TO REAL FHIR (if not mock) ---------- */
+
+    let conditionNames: string[] = [];
+    let allergyNames: string[] = [];
+
+    try {
+      const conditionBundle = await fetchFhirJson<ConditionBundle>(
+        `/Condition?patient=${user.fhirPatientId}&_format=json`
+      );
+
+      conditionNames =
+        conditionBundle.entry?.map((entry) => {
+          return (
+            entry.resource?.code?.coding?.[0]?.display ||
+            entry.resource?.code?.text ||
+            ""
+          );
+        }).filter(Boolean) || [];
+    } catch {}
+
+    try {
+      const allergyBundle = await fetchFhirJson<AllergyBundle>(
+        `/AllergyIntolerance?patient=${user.fhirPatientId}&_format=json`
+      );
+
+      allergyNames =
+        allergyBundle.entry?.map((entry) => {
+          return (
+            entry.resource?.code?.coding?.[0]?.display ||
+            entry.resource?.code?.text ||
+            ""
+          );
+        }).filter(Boolean) || [];
+    } catch {}
+
+    return c.json({
+      foods: [],
+      conditions: conditionNames,
+      allergies: allergyNames
+    });
+
   } catch (err) {
-    console.error("Failed to fetch patients:", err);
-    return c.json({ error: "Unable to load patients" }, 500);
+    console.error("foods-to-avoid error:", err);
+
+    return c.json({
+      foods: [],
+      conditions: [],
+      allergies: [],
+      message: "Unable to load dietary restrictions"
+    });
   }
 });
 
-router.post("/link", authMiddleware, async (c) => {
-  const { fhirPatientId } = await c.req.json();
-  const userId = c.get("userId");
+/* ------------------ MEDICATION ALERTS ------------------ */
 
-  const user = await prisma.user.update({
+router.post("/medication-alerts", authMiddleware, async (c) => {
+  const userId = c.get("userId");
+  const body = await c.req.json();
+
+  const foods: string[] = (body.foods || []).map((f: string) =>
+    f.toLowerCase()
+  );
+
+  const user = await prisma.user.findUnique({
     where: { id: userId },
-    data: { fhirPatientId },
-    select: { id: true, fhirPatientId: true },
+    select: { fhirPatientId: true },
   });
 
-  if (fhirPatientId) {
-    await prisma.userCondition.deleteMany({ where: { userId } });
-    await prisma.userAllergy.deleteMany({ where: { userId } });
-
-    let cached = false;
-
-    try {
-      const [conditionBundle, allergyBundle] = await Promise.all([
-        fetchFhirJson<ConditionBundle>(
-          `/Condition?patient=${fhirPatientId}&_format=json`,
-        ),
-        fetchFhirJson<AllergyBundle>(
-          `/AllergyIntolerance?patient=${fhirPatientId}&_format=json`,
-        ),
-      ]);
-
-      for (const entry of conditionBundle.entry || []) {
-        const resource = entry.resource;
-        if (!resource?.id) continue;
-        await prisma.userCondition.upsert({
-          where: { userId_fhirId: { userId, fhirId: resource.id } },
-          update: {
-            display:
-              resource.code?.coding?.[0]?.display ||
-              resource.code?.text ||
-              "Unknown",
-            code: resource.code?.coding?.[0]?.code || "unknown",
-          },
-          create: {
-            userId,
-            fhirId: resource.id,
-            display:
-              resource.code?.coding?.[0]?.display ||
-              resource.code?.text ||
-              "Unknown",
-            code: resource.code?.coding?.[0]?.code || "unknown",
-          },
-        });
-      }
-
-      for (const entry of allergyBundle.entry || []) {
-        const resource = entry.resource;
-        if (!resource?.id) continue;
-        await prisma.userAllergy.upsert({
-          where: { userId_fhirId: { userId, fhirId: resource.id } },
-          update: {
-            substance:
-              resource.code?.coding?.[0]?.display ||
-              resource.code?.text ||
-              "Unknown",
-          },
-          create: {
-            userId,
-            fhirId: resource.id,
-            substance:
-              resource.code?.coding?.[0]?.display ||
-              resource.code?.text ||
-              "Unknown",
-          },
-        });
-      }
-
-      cached = true;
-      console.log(`Cached FHIR data from server for user ${userId}`);
-    } catch {
-      console.log("FHIR unavailable during link");
-    }
-
-    if (!cached) {
-      const fhirPatient = await prisma.fhirPatient.findUnique({
-        where: { fhirId: fhirPatientId },
-      });
-
-      if (fhirPatient) {
-        const conditions = JSON.parse(fhirPatient.conditions || "[]");
-        const allergies = JSON.parse(fhirPatient.allergies || "[]");
-
-        for (const cond of conditions) {
-          await prisma.userCondition.upsert({
-            where: { userId_fhirId: { userId, fhirId: cond.fhirId } },
-            update: { display: cond.display, code: cond.code },
-            create: {
-              userId,
-              fhirId: cond.fhirId,
-              display: cond.display,
-              code: cond.code,
-            },
-          });
-        }
-
-        for (const allergy of allergies) {
-          await prisma.userAllergy.upsert({
-            where: { userId_fhirId: { userId, fhirId: allergy.fhirId } },
-            update: { substance: allergy.substance },
-            create: {
-              userId,
-              fhirId: allergy.fhirId,
-              substance: allergy.substance,
-            },
-          });
-        }
-
-        console.log(
-          `Loaded cached data from fhir_patients for ${fhirPatientId}`,
-        );
-      } else {
-        console.log(`No cached data available for ${fhirPatientId}`);
-      }
-    }
+  if (!user?.fhirPatientId) {
+    return c.json({ alerts: [] });
   }
 
-  return c.json({ message: "Patient linked successfully", user });
+  let medications: string[] = [];
+
+  /* ---------- USE MOCK FIRST ---------- */
+
+  if (mockFHIRData[user.fhirPatientId]) {
+    medications = mockFHIRData[user.fhirPatientId].medications.map((m) =>
+      m.toLowerCase()
+    );
+  } else {
+    try {
+      const medBundle = await fetchFhirJson<any>(
+        `/MedicationRequest?patient=${user.fhirPatientId}&_format=json`
+      );
+
+      medications =
+        medBundle.entry?.map((entry: any) => {
+          const med =
+            entry.resource?.medicationCodeableConcept?.coding?.[0]?.display ||
+            entry.resource?.medicationCodeableConcept?.text ||
+            "";
+          return med.toLowerCase();
+        }) || [];
+    } catch {}
+  }
+
+  const interactionMap: Record<string, string[]> = {
+    grapefruit: ["statin"],
+    spinach: ["warfarin"],
+    alcohol: ["metformin"],
+  };
+
+  const alerts: string[] = [];
+
+  foods.forEach((food) => {
+    Object.entries(interactionMap).forEach(([badFood, meds]) => {
+      if (food.includes(badFood)) {
+        meds.forEach((med) => {
+          const match = medications.find((m) => m.includes(med));
+          if (match) {
+            alerts.push(`${food} may interact with ${match}`);
+          }
+        });
+      }
+    });
+  });
+
+  return c.json({ alerts });
 });
 
 router.get("/context", authMiddleware, async (c) => {
   const userId = c.get("userId");
+
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { fhirPatientId: true },
@@ -203,135 +287,54 @@ router.get("/context", authMiddleware, async (c) => {
       patient: null,
       conditions: [],
       allergies: [],
-      providerSuggestions: [
-        "Link a FHIR patient to unlock condition-aware meal guidance and allergy reminders.",
-      ],
+      providerSuggestions: [],
     });
   }
 
-  try {
-    const [patient, conditionBundle, allergyBundle] = await Promise.all([
-      fetchFhirJson(`/Patient/${user.fhirPatientId}`),
-      fetchFhirJson<{
-        entry?: Array<{
-          resource?: {
-            code?: { text?: string; coding?: Array<{ display?: string }> };
-          };
-        }>;
-      }>(`/Condition?patient=${user.fhirPatientId}&_format=json`),
-      fetchFhirJson<{
-        entry?: Array<{
-          resource?: {
-            code?: { text?: string; coding?: Array<{ display?: string }> };
-          };
-        }>;
-      }>(`/AllergyIntolerance?patient=${user.fhirPatientId}&_format=json`),
-    ]);
-
-    const conditions = extractConditionNames(conditionBundle);
-    const allergies = extractAllergyNames(allergyBundle);
-
-    return c.json({
-      patient,
-      conditions,
-      allergies,
-      providerSuggestions: buildProviderSuggestions(conditions, allergies),
-    });
-  } catch {
-    console.log("FHIR unavailable, using cached data");
-
-    const [cachedConditions, cachedAllergies] = await Promise.all([
-      prisma.userCondition.findMany({ where: { userId } }),
-      prisma.userAllergy.findMany({ where: { userId } }),
-    ]);
-
-    const conditionNames = cachedConditions
-      .map((c) => c.display)
-      .filter(isDietRelevant);
-    const allergyNames = cachedAllergies.map((a) => a.substance);
-
-    const fhirPatient = await prisma.fhirPatient.findUnique({
-      where: { fhirId: user.fhirPatientId },
-    });
+  // use mock 
+  if (mockFHIRData[user.fhirPatientId]) {
+    const mock = mockFHIRData[user.fhirPatientId];
 
     return c.json({
       patient: {
         id: user.fhirPatientId,
-        birthDate: fhirPatient?.birthDate || null,
-        gender: fhirPatient?.gender || null,
+        name: [{ given: ["Demo"], family: "Patient" }],
       },
-      conditions: conditionNames,
-      allergies: allergyNames,
+      conditions: mock.conditions.map(c => c.display),
+      allergies: mock.allergies.map(a => a.substance),
       providerSuggestions: buildProviderSuggestions(
-        conditionNames,
-        allergyNames,
+        mock.conditions.map(c => c.display),
+        mock.allergies.map(a => a.substance)
       ),
     });
   }
+
+  // fallback empty
+  return c.json({
+    patient: null,
+    conditions: [],
+    allergies: [],
+    providerSuggestions: [],
+  });
 });
 
-router.get("/foods-to-avoid", authMiddleware, async (c) => {
+router.get("/patients", authMiddleware, async (c) => {
   const userId = c.get("userId");
+
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { fhirPatientId: true },
   });
 
-  if (!user?.fhirPatientId) {
-    return c.json({
-      foods: [],
-      message: "Link a FHIR patient to see personalized food recommendations.",
-    });
-  }
-
-  let conditions: string[];
-  let allergies: string[];
-
-  try {
-    const [conditionBundle, allergyBundle] = await Promise.all([
-      fetchFhirJson<{
-        entry?: Array<{
-          resource?: {
-            code?: { text?: string; coding?: Array<{ display?: string }> };
-          };
-        }>;
-      }>(`/Condition?patient=${user.fhirPatientId}&_format=json`),
-      fetchFhirJson<{
-        entry?: Array<{
-          resource?: {
-            code?: { text?: string; coding?: Array<{ display?: string }> };
-          };
-        }>;
-      }>(`/AllergyIntolerance?patient=${user.fhirPatientId}&_format=json`),
-    ]);
-
-    conditions = extractConditionNames(conditionBundle);
-    allergies = extractAllergyNames(allergyBundle);
-  } catch {
-    console.log("FHIR unavailable, using cached data for foods-to-avoid");
-
-    const [cachedConditions, cachedAllergies] = await Promise.all([
-      prisma.userCondition.findMany({ where: { userId } }),
-      prisma.userAllergy.findMany({ where: { userId } }),
-    ]);
-
-    conditions = cachedConditions.map((c) => c.display).filter(isDietRelevant);
-    allergies = cachedAllergies.map((a) => a.substance);
-  }
-
-  const foods = buildFoodsToAvoid(conditions, allergies);
-  return c.json({ foods, conditions, allergies });
-});
-
-router.get("/patient/:id", async (c) => {
-  const id = c.req.param("id");
-  try {
-    const patient = await fetchFhirJson(`/Patient/${id}`);
-    return c.json(patient);
-  } catch (error) {
-    console.error(error);
-    return c.json({ error: "Patient not found" }, 404);
-  }
+  // return mock patient list
+  return c.json([
+    {
+      resource: {
+        id: "demo-patient-1",
+        name: [{ given: ["Demo"], family: "Patient" }],
+      },
+    },
+  ]);
 });
 
 export default router;
