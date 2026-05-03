@@ -95,10 +95,6 @@ export default function LogMeal() {
     Math.round((dailySummary.totals.calories / calorieGoal) * 100)
   );
 
-  const macroPercentages = calculateMacroPercentages(
-    dailySummary.totals
-  );
-
   const handleMealCreated = async (foods: string[]): Promise<boolean> => {
     try {
       const res = await fetch("/fhir/medication-alerts", {

@@ -174,7 +174,7 @@ export default function Dashboard() {
       try {
         const foods = mealLogs.flatMap((meal) =>
           meal.items.map((item) =>
-            item.foodItem?.name?.toLowerCase() || ""
+            (item.foodItem?.name || "").toLowerCase()
           )
         );
   
@@ -709,23 +709,12 @@ export default function Dashboard() {
                   groupedMeals[currentMealType]
                 );
 
-                const mealItems = groupedMeals[currentMealType] || [];
-
-                const unsafe = mealItems.some((meal) =>
-                  meal.items.some((item) =>
-                    item.foodItem &&
-                    unsafeFoods.some((food) =>
-                      item.foodItem.name.toLowerCase().includes(food)
-                    )
-                  )
-                );
-
                 return (
                   <>
                     {desc}
                     {(() => {
-                      const match = unsafeFoods.find((u) =>
-                        desc.toLowerCase().includes(u.food)
+                      const match = unsafeFoods.find(
+                        (u) => u.food && desc.toLowerCase().includes(u.food)
                       );
                 
                       return match ? (
@@ -779,23 +768,12 @@ export default function Dashboard() {
                   groupedMeals[currentMealType]
                 );
 
-                const mealItems = groupedMeals[currentMealType] || [];
-
-                const unsafe = mealItems.some((meal) =>
-                  meal.items.some((item) =>
-                    item.foodItem &&
-                    unsafeFoods.some((food) =>
-                      item.foodItem.name.toLowerCase().includes(food)
-                    )
-                  )
-                );
-
                 return (
                   <>
                     {desc}
                     {(() => {
-                      const match = unsafeFoods.find((u) =>
-                        desc.toLowerCase().includes(u.food)
+                      const match = unsafeFoods.find(
+                        (u) => u.food && desc.toLowerCase().includes(u.food)
                       );
                 
                       return match ? (
@@ -1048,7 +1026,7 @@ export default function Dashboard() {
                 <MealLogComposer
                   compact
                   selectedDate={selectedDate}
-                  onMealCreated={reloadSelectedDate}
+                  onMealCreated={async () => true}
                   onAfterSave={() => setUtilityTab("history")}
                 />
               ) : (
